@@ -61,6 +61,30 @@ def search(args) -> int:
     return 0
 
 
+def explain_entity(entity: str) -> str:
+    items = [record for record in records() if record["entity"] == entity]
+    if not items:
+        return f"No records for entity: {entity}"
+    active = [record for record in items if record["status"] == "active"]
+    lines = [f"Entity: {entity}", f"Active records: {len(active)}"]
+    for record in active:
+        lines.append(f"CURRENT {record['id']} [{record['kind']}] {record['text']}")
+        previous = record.get("supersedes")
+        while previous:
+            old = next((item for item in items if item["id"] == previous), None)
+            if old is None:
+                lines.append(f"  BROKEN supersedes: {previous}")
+                break
+            lines.append(f"  <- {old['id']} [{old['status']}] {old['text']}")
+            previous = old.get("supersedes")
+    return "\\n".join(lines)
+
+
+def explain(args) -> int:
+    print(explain_entity(args.entity))
+    return 0
+
+
 def verify(_args) -> int:
     seen = set()
     errors = []
@@ -94,6 +118,7 @@ def main() -> int:
     sub = parser.add_subparsers(required=True)
     command = sub.add_parser("add"); command.add_argument("--kind", required=True); command.add_argument("--entity", required=True); command.add_argument("--text", required=True); command.add_argument("--source", required=True); command.add_argument("--status", default="active", choices=sorted(STATUSES)); command.add_argument("--confidence", type=float, default=1.0); command.add_argument("--tag", action="append", default=[]); command.add_argument("--supersedes"); command.set_defaults(fn=add)
     command = sub.add_parser("search"); command.add_argument("--entity"); command.add_argument("--kind"); command.add_argument("--text"); command.add_argument("--active", action="store_true"); command.set_defaults(fn=search)
+    command = sub.add_parser("explain"); command.add_argument("--entity", required=True); command.set_defaults(fn=explain)
     command = sub.add_parser("verify"); command.set_defaults(fn=verify)
     args = parser.parse_args()
     return args.fn(args)
