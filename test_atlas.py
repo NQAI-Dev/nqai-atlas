@@ -35,6 +35,20 @@ class AtlasTests(unittest.TestCase):
         self.assertIn("CURRENT", explanation)
         self.assertIn("<- " + first["id"], explanation)
 
+    def test_current_records_hide_old_observations(self):
+        for text in ("old", "new"):
+            atlas.append_record({
+                "id": atlas.new_id(), "ts": "2026-09-12T00:00:00Z", "kind": "observation",
+                "entity": "project:test", "text": text, "status": "active",
+                "source": {"kind": "test", "ref": "x"}, "confidence": 1.0,
+                "tags": [], "supersedes": None, "relations": [],
+            })
+        items = atlas.records()
+        items[-1]["supersedes"] = items[-2]["id"]
+        self.records.write_text("".join(json.dumps(item) + "\n" for item in items), encoding="utf-8")
+        current = atlas.current_records("project:test")
+        self.assertEqual([item["text"] for item in current], ["new"])
+
     def test_verify_rejects_unknown_supersedes(self):
         self.records.write_text(json.dumps({
             "id": "new", "ts": "2026-09-12T00:00:00Z", "kind": "decision",
