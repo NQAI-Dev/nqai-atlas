@@ -50,6 +50,16 @@ def active_records(entity: str | None = None) -> list[dict]:
             and (entity is None or item.get("entity") == entity)]
 
 
+def current_records(entity: str) -> list[dict]:
+    """Return current records; observations are snapshots, not simultaneous facts."""
+    current = active_records(entity)
+    observations = [item for item in current if item.get("kind") == "observation"]
+    if len(observations) <= 1:
+        return current
+    latest = max(observations, key=lambda item: item.get("ts", ""))
+    return [item for item in current if item.get("kind") != "observation"] + [latest]
+
+
 def append_record(record: dict) -> None:
     RECORDS.parent.mkdir(parents=True, exist_ok=True)
     with RECORDS.open("a", encoding="utf-8") as handle:
@@ -118,8 +128,10 @@ def search(args) -> int:
 
 def context_entity(entity: str) -> str:
     items = records()
-    own = [record for record in items if record["entity"] == entity]
+    own = current_records(entity)
     related = [record for record in items if any(link.get("entity") == entity for link in record.get("relations", []))]
+    related_entities = {record.get("entity") for record in related}
+    related = [record for related_entity in related_entities for record in current_records(related_entity)]
     if not own and not related:
         return f"No context for entity: {entity}"
     lines = [f"Context: {entity}", f"Own records: {len(own)}", f"Related records: {len(related)}"]
@@ -133,7 +145,7 @@ def explain_entity(entity: str) -> str:
     items = [record for record in records() if record["entity"] == entity]
     if not items:
         return f"No records for entity: {entity}"
-    active = active_records(entity)
+    active = current_records(entity)
     lines = [f"Entity: {entity}", f"Active records: {len(active)}"]
     for record in active:
         lines.append(f"CURRENT {record['id']} [{record['kind']}] {record['text']}")
