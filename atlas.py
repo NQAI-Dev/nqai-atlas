@@ -43,6 +43,7 @@ def add(args) -> int:
         "entity": args.entity, "text": args.text, "status": args.status,
         "source": {"kind": "conversation", "ref": args.source},
         "confidence": args.confidence, "tags": args.tag, "supersedes": args.supersedes,
+        "relations": getattr(args, "relation", []),
     }
     RECORDS.parent.mkdir(parents=True, exist_ok=True)
     with RECORDS.open("a", encoding="utf-8") as handle:
@@ -59,6 +60,19 @@ def search(args) -> int:
     for record in found:
         print(f"{record['id']} [{record['kind']}] {record['entity']}: {record['text']}")
     return 0
+
+
+def context_entity(entity: str) -> str:
+    items = records()
+    own = [record for record in items if record["entity"] == entity]
+    related = [record for record in items if any(link.get("entity") == entity for link in record.get("relations", []))]
+    if not own and not related:
+        return f"No context for entity: {entity}"
+    lines = [f"Context: {entity}", f"Own records: {len(own)}", f"Related records: {len(related)}"]
+    for record in own + [item for item in related if item not in own]:
+        marker = "OWN" if record in own else "RELATED"
+        lines.append(f"{marker} {record['id']} [{record['kind']}] {record['status']}: {record['text']}")
+    return "\\n".join(lines)
 
 
 def explain_entity(entity: str) -> str:
@@ -116,8 +130,9 @@ def verify(_args) -> int:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(required=True)
-    command = sub.add_parser("add"); command.add_argument("--kind", required=True); command.add_argument("--entity", required=True); command.add_argument("--text", required=True); command.add_argument("--source", required=True); command.add_argument("--status", default="active", choices=sorted(STATUSES)); command.add_argument("--confidence", type=float, default=1.0); command.add_argument("--tag", action="append", default=[]); command.add_argument("--supersedes"); command.set_defaults(fn=add)
+    command = sub.add_parser("add"); command.add_argument("--kind", required=True); command.add_argument("--entity", required=True); command.add_argument("--text", required=True); command.add_argument("--source", required=True); command.add_argument("--status", default="active", choices=sorted(STATUSES)); command.add_argument("--confidence", type=float, default=1.0); command.add_argument("--tag", action="append", default=[]); command.add_argument("--supersedes"); command.add_argument("--relation", action="append", default=[], type=lambda value: {"type": "relates_to", "entity": value}); command.set_defaults(fn=add)
     command = sub.add_parser("search"); command.add_argument("--entity"); command.add_argument("--kind"); command.add_argument("--text"); command.add_argument("--active", action="store_true"); command.set_defaults(fn=search)
+    command = sub.add_parser("context"); command.add_argument("--entity", required=True); command.set_defaults(fn=lambda args: print(context_entity(args.entity)) or 0)
     command = sub.add_parser("explain"); command.add_argument("--entity", required=True); command.set_defaults(fn=explain)
     command = sub.add_parser("verify"); command.set_defaults(fn=verify)
     args = parser.parse_args()

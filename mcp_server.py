@@ -55,6 +55,7 @@ def call_tool(name, args):
             "source": {"kind": args.get("source_kind", "conversation"), "ref": args["source"]},
             "confidence": float(args.get("confidence", 1.0)),
             "tags": args.get("tags", []), "supersedes": args.get("supersedes"),
+            "relations": [{"type": "relates_to", "entity": entity} for entity in args.get("relations", [])],
         }
         if record["status"] not in atlas.STATUSES:
             raise ValueError("invalid status")
@@ -62,6 +63,11 @@ def call_tool(name, args):
         with atlas.RECORDS.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
         return f"Added Atlas record {record['id']}."
+    if name == "atlas_context":
+        entity = args.get("entity")
+        if not entity:
+            raise ValueError("entity is required")
+        return atlas.context_entity(entity)
     if name == "atlas_explain":
         entity = args.get("entity")
         if not entity:
@@ -84,7 +90,8 @@ def handle(req):
     if method == "tools/list":
         return result(request_id, {"tools": [
             {"name": "atlas_search", "description": "Search durable Atlas records; inactive records are excluded only when active=true.", "inputSchema": {"type": "object", "properties": {"entity": {"type": "string"}, "kind": {"type": "string", "enum": sorted(atlas.KINDS)}, "text": {"type": "string"}, "active": {"type": "boolean"}}}},
-            {"name": "atlas_add", "description": "Append a durable fact, decision, goal, observation, or link to Atlas.", "inputSchema": {"type": "object", "required": ["kind", "entity", "text", "source"], "properties": {"kind": {"type": "string", "enum": sorted(atlas.KINDS)}, "entity": {"type": "string"}, "text": {"type": "string"}, "source": {"type": "string"}, "source_kind": {"type": "string"}, "status": {"type": "string", "enum": sorted(atlas.STATUSES)}, "confidence": {"type": "number", "minimum": 0, "maximum": 1}, "tags": {"type": "array", "items": {"type": "string"}}, "supersedes": {"type": ["string", "null"]}}}},
+            {"name": "atlas_add", "description": "Append a durable fact, decision, goal, observation, or link to Atlas.", "inputSchema": {"type": "object", "required": ["kind", "entity", "text", "source"], "properties": {"kind": {"type": "string", "enum": sorted(atlas.KINDS)}, "entity": {"type": "string"}, "text": {"type": "string"}, "source": {"type": "string"}, "source_kind": {"type": "string"}, "status": {"type": "string", "enum": sorted(atlas.STATUSES)}, "confidence": {"type": "number", "minimum": 0, "maximum": 1}, "tags": {"type": "array", "items": {"type": "string"}}, "supersedes": {"type": ["string", "null"]}, "relations": {"type": "array", "items": {"type": "string"}}}}},
+            {"name": "atlas_context", "description": "Show an entity's own records and records explicitly related to it.", "inputSchema": {"type": "object", "required": ["entity"], "properties": {"entity": {"type": "string"}}}},
             {"name": "atlas_explain", "description": "Explain the current active records for an entity and show their supersedes history.", "inputSchema": {"type": "object", "required": ["entity"], "properties": {"entity": {"type": "string"}}}},
             {"name": "atlas_verify", "description": "Validate Atlas JSONL integrity, IDs, timestamps, kinds, statuses, and supersedes links.", "inputSchema": {"type": "object", "properties": {}}},
         ]})
