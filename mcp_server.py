@@ -33,7 +33,7 @@ def records_text(items):
 def call_tool(name, args):
     if name == "atlas_search":
         matches = [
-            r for r in atlas.records()
+            r for r in atlas.active_records(args.get("entity"))
             if (not args.get("entity") or r["entity"] == args["entity"])
             and (not args.get("kind") or r["kind"] == args["kind"])
             and (not args.get("active") or r["status"] == "active")
@@ -55,7 +55,7 @@ def call_tool(name, args):
             "source": {"kind": args.get("source_kind", "conversation"), "ref": args["source"]},
             "confidence": float(args.get("confidence", 1.0)),
             "tags": args.get("tags", []), "supersedes": args.get("supersedes"),
-            "relations": [{"type": "relates_to", "entity": entity} for entity in args.get("relations", [])],
+            "relations": [{"type": "relates_to", "entity": related_entity} for related_entity in args.get("relations", [])],
         }
         if record["status"] not in atlas.STATUSES:
             raise ValueError("invalid status")
