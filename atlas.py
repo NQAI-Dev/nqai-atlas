@@ -72,7 +72,7 @@ def context_entity(entity: str) -> str:
     for record in own + [item for item in related if item not in own]:
         marker = "OWN" if record in own else "RELATED"
         lines.append(f"{marker} {record['id']} [{record['kind']}] {record['status']}: {record['text']}")
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 def explain_entity(entity: str) -> str:
