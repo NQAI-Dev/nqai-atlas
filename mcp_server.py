@@ -63,6 +63,22 @@ def call_tool(name, args):
         with atlas.RECORDS.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
         return f"Added Atlas record {record['id']}."
+    if name == "atlas_observe_projects":
+        root = args.get("root", str(atlas.DEFAULT_PROJECTS))
+        projects = atlas.project_inventory(Path(root))
+        for project in projects:
+            record = {
+                "id": atlas.new_id(), "ts": atlas.timestamp(), "kind": "observation",
+                "entity": f"project:{project['name']}",
+                "text": json.dumps(project, ensure_ascii=False, sort_keys=True),
+                "status": "active", "source": {"kind": "filesystem", "ref": project["path"]},
+                "confidence": 1.0, "tags": ["git", "inventory"], "supersedes": None,
+                "relations": [{"type": "relates_to", "entity": "nqai-atlas"}],
+            }
+            atlas.RECORDS.parent.mkdir(parents=True, exist_ok=True)
+            with atlas.RECORDS.open("a", encoding="utf-8") as handle:
+                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        return f"Observed projects: {len(projects)}."
     if name == "atlas_context":
         entity = args.get("entity")
         if not entity:
@@ -92,6 +108,7 @@ def handle(req):
             {"name": "atlas_search", "description": "Search durable Atlas records; inactive records are excluded only when active=true.", "inputSchema": {"type": "object", "properties": {"entity": {"type": "string"}, "kind": {"type": "string", "enum": sorted(atlas.KINDS)}, "text": {"type": "string"}, "active": {"type": "boolean"}}}},
             {"name": "atlas_add", "description": "Append a durable fact, decision, goal, observation, or link to Atlas.", "inputSchema": {"type": "object", "required": ["kind", "entity", "text", "source"], "properties": {"kind": {"type": "string", "enum": sorted(atlas.KINDS)}, "entity": {"type": "string"}, "text": {"type": "string"}, "source": {"type": "string"}, "source_kind": {"type": "string"}, "status": {"type": "string", "enum": sorted(atlas.STATUSES)}, "confidence": {"type": "number", "minimum": 0, "maximum": 1}, "tags": {"type": "array", "items": {"type": "string"}}, "supersedes": {"type": ["string", "null"]}, "relations": {"type": "array", "items": {"type": "string"}}}}},
             {"name": "atlas_context", "description": "Show an entity's own records and records explicitly related to it.", "inputSchema": {"type": "object", "required": ["entity"], "properties": {"entity": {"type": "string"}}}},
+            {"name": "atlas_observe_projects", "description": "Append a read-only Git inventory observation for local projects.", "inputSchema": {"type": "object", "properties": {"root": {"type": "string"}}}},
             {"name": "atlas_explain", "description": "Explain the current active records for an entity and show their supersedes history.", "inputSchema": {"type": "object", "required": ["entity"], "properties": {"entity": {"type": "string"}}}},
             {"name": "atlas_verify", "description": "Validate Atlas JSONL integrity, IDs, timestamps, kinds, statuses, and supersedes links.", "inputSchema": {"type": "object", "properties": {}}},
         ]})
