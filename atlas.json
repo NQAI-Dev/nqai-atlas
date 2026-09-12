@@ -1,0 +1,38 @@
+{
+  "version": 1,
+  "updated_at": "2026-09-12T15:43:59+00:00",
+  "projects": [
+    {
+      "name": "es-hypervisor",
+      "path": "/home/openclaw/Projects/es-hypervisor",
+      "branch": "master",
+      "dirty": true,
+      "changed": 20,
+      "last_commit": "9aa69ee feat: initial architecture and proto contracts for es-hypervisor"
+    },
+    {
+      "name": "es-paste",
+      "path": "/home/openclaw/Projects/es-paste",
+      "branch": "master",
+      "dirty": true,
+      "changed": 6,
+      "last_commit": "cbdafda feat: initial implementation of es-paste service"
+    },
+    {
+      "name": "es-saas",
+      "path": "/home/openclaw/Projects/es-saas",
+      "branch": "master",
+      "dirty": false,
+      "changed": 0,
+      "last_commit": "ecb81b9 feat: initial implementation of es-saas daemon"
+    },
+    {
+      "name": "mars-host-status",
+      "path": "/home/openclaw/Projects/mars-host-status",
+      "branch": "master",
+      "dirty": false,
+      "changed": 0,
+      "last_commit": "dd485dd Add Mars Host favicon"
+    }
+  ]
+}
