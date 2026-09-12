@@ -67,17 +67,18 @@ def call_tool(name, args):
         root = args.get("root", str(atlas.DEFAULT_PROJECTS))
         projects = atlas.project_inventory(Path(root))
         for project in projects:
+            entity = f"project:{project['name']}"
+            previous = next(iter(reversed(atlas.active_records(entity))), None)
             record = {
                 "id": atlas.new_id(), "ts": atlas.timestamp(), "kind": "observation",
-                "entity": f"project:{project['name']}",
+                "entity": entity,
                 "text": json.dumps(project, ensure_ascii=False, sort_keys=True),
                 "status": "active", "source": {"kind": "filesystem", "ref": project["path"]},
-                "confidence": 1.0, "tags": ["git", "inventory"], "supersedes": None,
+                "confidence": 1.0, "tags": ["git", "inventory"],
+                "supersedes": previous["id"] if previous else None,
                 "relations": [{"type": "relates_to", "entity": "nqai-atlas"}],
             }
-            atlas.RECORDS.parent.mkdir(parents=True, exist_ok=True)
-            with atlas.RECORDS.open("a", encoding="utf-8") as handle:
-                handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+            atlas.append_record(record)
         return f"Observed projects: {len(projects)}."
     if name == "atlas_context":
         entity = args.get("entity")
