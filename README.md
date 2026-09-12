@@ -1,13 +1,15 @@
 # NQAI Atlas
 
-Локальный реестр операционного состояния NQAI: проекты, ветки, dirty-state и последний коммит.
+Локальное append-only хранилище долговечных фактов, решений, целей и связей NQAI.
 
-Atlas не заменяет OpenClaw: OpenClaw хранит диалог и запускает работу, Atlas хранит проверяемую картину личной среды.
+Atlas не заменяет OpenClaw: OpenClaw ведёт диалог и выполняет действия, Atlas хранит проверяемую историю решений между сессиями.
 
 ```bash
-./atlas.py scan                 # обновить индекс Git-проектов
-./atlas.py status               # показать картину среды
-./atlas.py check                # exit 1, если есть dirty-проекты
+python3 atlas.py add --kind decision --entity nqai-atlas \
+  --text "Atlas хранит долговечные решения, но не выполняет действия." \
+  --source "telegram:2026-09-12"
+python3 atlas.py search --entity nqai-atlas --active
+python3 atlas.py verify
 ```
 
-`atlas.json` — локальный артефакт состояния, не секрет и не источник истины для кода.
+Записи лежат в `data/records.jsonl`. История не переписывается: новая запись может указать `--supersedes`, а старой записи можно присвоить `status: superseded`.
