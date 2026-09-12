@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "nqai-atlas": {
+      "command": "python3",
+      "args": ["/home/openclaw/Projects/nqai-atlas/mcp_server.py"]
+    }
+  }
+}
