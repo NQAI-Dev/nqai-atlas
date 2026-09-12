@@ -42,6 +42,20 @@ def git_output(path: Path, *arguments: str) -> str | None:
     return process.stdout.strip() if process.returncode == 0 else None
 
 
+def active_records(entity: str | None = None) -> list[dict]:
+    items = records()
+    superseded = {item.get("supersedes") for item in items if item.get("supersedes")}
+    return [item for item in items
+            if item.get("status") == "active" and item.get("id") not in superseded
+            and (entity is None or item.get("entity") == entity)]
+
+
+def append_record(record: dict) -> None:
+    RECORDS.parent.mkdir(parents=True, exist_ok=True)
+    with RECORDS.open("a", encoding="utf-8") as handle:
+        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+
+
 def project_inventory(root: Path) -> list[dict]:
     result = []
     for git_dir in sorted(root.glob("*/.git")):
@@ -59,17 +73,18 @@ def project_inventory(root: Path) -> list[dict]:
 def observe_projects(args) -> int:
     projects = project_inventory(Path(args.root))
     for project in projects:
+        entity = f"project:{project['name']}"
+        previous = next(iter(reversed(active_records(entity))), None)
         record = {
             "id": new_id(), "ts": timestamp(), "kind": "observation",
-            "entity": f"project:{project['name']}",
+            "entity": entity,
             "text": json.dumps(project, ensure_ascii=False, sort_keys=True),
             "status": "active", "source": {"kind": "filesystem", "ref": project["path"]},
-            "confidence": 1.0, "tags": ["git", "inventory"], "supersedes": None,
+            "confidence": 1.0, "tags": ["git", "inventory"],
+            "supersedes": previous["id"] if previous else None,
             "relations": [{"type": "relates_to", "entity": "nqai-atlas"}],
         }
-        RECORDS.parent.mkdir(parents=True, exist_ok=True)
-        with RECORDS.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        append_record(record)
     print(f"observed projects: {len(projects)}")
     return 0
 
@@ -118,7 +133,7 @@ def explain_entity(entity: str) -> str:
     items = [record for record in records() if record["entity"] == entity]
     if not items:
         return f"No records for entity: {entity}"
-    active = [record for record in items if record["status"] == "active"]
+    active = active_records(entity)
     lines = [f"Entity: {entity}", f"Active records: {len(active)}"]
     for record in active:
         lines.append(f"CURRENT {record['id']} [{record['kind']}] {record['text']}")
@@ -130,7 +145,7 @@ def explain_entity(entity: str) -> str:
                 break
             lines.append(f"  <- {old['id']} [{old['status']}] {old['text']}")
             previous = old.get("supersedes")
-    return "\\n".join(lines)
+    return "\n".join(lines)
 
 
 def explain(args) -> int:
