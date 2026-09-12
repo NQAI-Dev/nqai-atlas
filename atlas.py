@@ -3,12 +3,14 @@
 from __future__ import annotations
 import argparse
 import json
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 RECORDS = ROOT / "data" / "records.jsonl"
+DEFAULT_PROJECTS = Path("/home/openclaw/Projects")
 KINDS = {"fact", "decision", "goal", "observation", "link"}
 STATUSES = {"active", "superseded", "archived"}
 
@@ -33,6 +35,43 @@ def new_id() -> str:
         index += 1
         candidate = f"rec_{stamp}_{index:02d}"
     return candidate
+
+
+def git_output(path: Path, *arguments: str) -> str | None:
+    process = subprocess.run(["git", "-C", str(path), *arguments], capture_output=True, text=True)
+    return process.stdout.strip() if process.returncode == 0 else None
+
+
+def project_inventory(root: Path) -> list[dict]:
+    result = []
+    for git_dir in sorted(root.glob("*/.git")):
+        path = git_dir.parent
+        branch = git_output(path, "branch", "--show-current") or "detached"
+        status = git_output(path, "status", "--porcelain") or ""
+        result.append({
+            "name": path.name, "path": str(path), "branch": branch,
+            "dirty": bool(status), "changed": len(status.splitlines()),
+            "last_commit": git_output(path, "log", "-1", "--format=%h %s"),
+        })
+    return result
+
+
+def observe_projects(args) -> int:
+    projects = project_inventory(Path(args.root))
+    for project in projects:
+        record = {
+            "id": new_id(), "ts": timestamp(), "kind": "observation",
+            "entity": f"project:{project['name']}",
+            "text": json.dumps(project, ensure_ascii=False, sort_keys=True),
+            "status": "active", "source": {"kind": "filesystem", "ref": project["path"]},
+            "confidence": 1.0, "tags": ["git", "inventory"], "supersedes": None,
+            "relations": [{"type": "relates_to", "entity": "nqai-atlas"}],
+        }
+        RECORDS.parent.mkdir(parents=True, exist_ok=True)
+        with RECORDS.open("a", encoding="utf-8") as handle:
+            handle.write(json.dumps(record, ensure_ascii=False) + "\\n")
+    print(f"observed projects: {len(projects)}")
+    return 0
 
 
 def add(args) -> int:
@@ -133,6 +172,7 @@ def main() -> int:
     command = sub.add_parser("add"); command.add_argument("--kind", required=True); command.add_argument("--entity", required=True); command.add_argument("--text", required=True); command.add_argument("--source", required=True); command.add_argument("--status", default="active", choices=sorted(STATUSES)); command.add_argument("--confidence", type=float, default=1.0); command.add_argument("--tag", action="append", default=[]); command.add_argument("--supersedes"); command.add_argument("--relation", action="append", default=[], type=lambda value: {"type": "relates_to", "entity": value}); command.set_defaults(fn=add)
     command = sub.add_parser("search"); command.add_argument("--entity"); command.add_argument("--kind"); command.add_argument("--text"); command.add_argument("--active", action="store_true"); command.set_defaults(fn=search)
     command = sub.add_parser("context"); command.add_argument("--entity", required=True); command.set_defaults(fn=lambda args: print(context_entity(args.entity)) or 0)
+    command = sub.add_parser("observe-projects"); command.add_argument("--root", default=str(DEFAULT_PROJECTS)); command.set_defaults(fn=observe_projects)
     command = sub.add_parser("explain"); command.add_argument("--entity", required=True); command.set_defaults(fn=explain)
     command = sub.add_parser("verify"); command.set_defaults(fn=verify)
     args = parser.parse_args()
