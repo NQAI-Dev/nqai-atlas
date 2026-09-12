@@ -13,6 +13,8 @@ RECORDS = ROOT / "data" / "records.jsonl"
 DEFAULT_PROJECTS = Path("/home/openclaw/Projects")
 KINDS = {"fact", "decision", "goal", "observation", "link"}
 STATUSES = {"active", "superseded", "archived"}
+ENTITY_TYPES = {"nqai", "project", "service", "host", "person", "decision", "goal", "unknown"}
+RELATION_TYPES = {"relates_to", "depends_on", "runs_on", "owns", "tracks"}
 
 
 def timestamp() -> str:
@@ -58,6 +60,28 @@ def current_records(entity: str) -> list[dict]:
         return current
     latest = max(observations, key=lambda item: item.get("ts", ""))
     return [item for item in current if item.get("kind") != "observation"] + [latest]
+
+
+def entity_type(entity: str) -> str:
+    return entity.split(":", 1)[0] if ":" in entity else ("nqai" if entity == "nqai-atlas" else "unknown")
+
+
+def validate_record(record: dict, seen: set[str] | None = None) -> list[str]:
+    errors = []
+    required = {"id", "ts", "kind", "entity", "text", "status", "source", "confidence", "tags", "supersedes"}
+    missing = required - record.keys()
+    if missing:
+        errors.append(f"missing {', '.join(sorted(missing))}")
+    if entity_type(record.get("entity", "")) not in ENTITY_TYPES:
+        errors.append(f"invalid entity type: {record.get('entity')}")
+    if not isinstance(record.get("relations", []), list):
+        errors.append("relations must be a list")
+    for relation in record.get("relations", []):
+        if not isinstance(relation, dict) or relation.get("type") not in RELATION_TYPES or not relation.get("entity"):
+            errors.append(f"invalid relation: {relation}")
+    if seen is not None and record.get("supersedes") and record["supersedes"] not in seen:
+        errors.append(f"unknown supersedes {record['supersedes']}")
+    return errors
 
 
 def append_record(record: dict) -> None:
@@ -174,9 +198,7 @@ def verify(_args) -> int:
         except json.JSONDecodeError as error:
             errors.append(f"line {line_no}: invalid JSON ({error.msg})")
             continue
-        required = {"id", "ts", "kind", "entity", "text", "status", "source", "confidence", "tags", "supersedes"}
-        missing = required - record.keys()
-        if missing: errors.append(f"line {line_no}: missing {', '.join(sorted(missing))}")
+        errors.extend(f"line {line_no}: {error}" for error in validate_record(record, seen))
         if record.get("id") in seen: errors.append(f"line {line_no}: duplicate id {record.get('id')}")
         seen.add(record.get("id"))
         if record.get("kind") not in KINDS: errors.append(f"line {line_no}: invalid kind")

@@ -49,6 +49,16 @@ class AtlasTests(unittest.TestCase):
         current = atlas.current_records("project:test")
         self.assertEqual([item["text"] for item in current], ["new"])
 
+    def test_verify_rejects_invalid_relation(self):
+        self.records.write_text(json.dumps({
+            "id": "bad", "ts": "2026-09-12T00:00:00Z", "kind": "fact",
+            "entity": "project:test", "text": "bad", "status": "active",
+            "source": {"kind": "test", "ref": "x"}, "confidence": 1,
+            "tags": [], "supersedes": None,
+            "relations": [{"type": "invented", "entity": "host:x"}],
+        }) + "\n", encoding="utf-8")
+        self.assertEqual(atlas.verify(SimpleNamespace()), 1)
+
     def test_verify_rejects_unknown_supersedes(self):
         self.records.write_text(json.dumps({
             "id": "new", "ts": "2026-09-12T00:00:00Z", "kind": "decision",
