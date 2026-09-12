@@ -69,7 +69,7 @@ def observe_projects(args) -> int:
         }
         RECORDS.parent.mkdir(parents=True, exist_ok=True)
         with RECORDS.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\\n")
+            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     print(f"observed projects: {len(projects)}")
     return 0
 
