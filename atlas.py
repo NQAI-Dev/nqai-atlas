@@ -2,14 +2,16 @@
 """NQAI Atlas: append-only storage for durable facts and decisions."""
 from __future__ import annotations
 import argparse
+import fcntl
 import json
+import os
 import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-RECORDS = ROOT / "data" / "records.jsonl"
+RECORDS = Path(os.environ.get("ATLAS_RECORDS") or (ROOT / "data" / "records.jsonl"))
 DEFAULT_PROJECTS = Path("/home/openclaw/Projects")
 KINDS = {"fact", "decision", "goal", "observation", "link"}
 STATUSES = {"active", "superseded", "archived"}
@@ -87,6 +89,7 @@ def validate_record(record: dict, seen: set[str] | None = None) -> list[str]:
 def append_record(record: dict) -> None:
     RECORDS.parent.mkdir(parents=True, exist_ok=True)
     with RECORDS.open("a", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
 
 
@@ -135,6 +138,7 @@ def add(args) -> int:
     }
     RECORDS.parent.mkdir(parents=True, exist_ok=True)
     with RECORDS.open("a", encoding="utf-8") as handle:
+        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
         handle.write(json.dumps(record, ensure_ascii=False) + "\n")
     print(record["id"])
     return 0
