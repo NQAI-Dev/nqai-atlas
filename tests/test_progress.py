@@ -72,5 +72,10 @@ class ProgressTests(unittest.TestCase):
         self.assertIn("[commit]", result)
         self.assertIn("we have a new commit", result)
 
+    def test_tools_list_advertises_atlas_progress(self):
+        result = mcp_server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
+        names = {tool["name"] for tool in result["result"]["tools"]}
+        self.assertIn("atlas_progress", names)
+
 if __name__ == "__main__":
     unittest.main()
