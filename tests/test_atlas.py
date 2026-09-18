@@ -69,6 +69,28 @@ class AtlasTests(unittest.TestCase):
         }) + "\n", encoding="utf-8")
         self.assertEqual(atlas.verify(SimpleNamespace()), 1)
 
+    def test_project_observations_skip_unchanged_and_supersede_changes(self):
+        root = Path(self.tmp.name) / "projects"
+        project = root / "demo"
+        project.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", "-b", "main"], cwd=project, check=True)
+        subprocess.run(["git", "config", "user.email", "test@example.com"], cwd=project, check=True)
+        subprocess.run(["git", "config", "user.name", "Atlas Test"], cwd=project, check=True)
+        (project / "README.md").write_text("one\n", encoding="utf-8")
+        subprocess.run(["git", "add", "README.md"], cwd=project, check=True)
+        subprocess.run(["git", "commit", "-q", "-m", "initial"], cwd=project, check=True)
+
+        self.assertEqual(atlas.record_project_observations(root), (1, 0))
+        first = atlas.records()[0]
+        self.assertEqual(atlas.record_project_observations(root), (0, 1))
+        self.assertEqual(len(atlas.records()), 1)
+
+        (project / "README.md").write_text("two\n", encoding="utf-8")
+        self.assertEqual(atlas.record_project_observations(root), (1, 0))
+        second = atlas.records()[-1]
+        self.assertEqual(second["supersedes"], first["id"])
+        self.assertTrue(json.loads(second["text"])["dirty"])
+
     def test_observe_projects_does_not_supersede_other_record_kinds(self):
         atlas.append_record({
             "id": "fact-1", "ts": "2026-09-18T00:00:00Z", "kind": "fact",
