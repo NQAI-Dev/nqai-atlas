@@ -107,22 +107,35 @@ def project_inventory(root: Path) -> list[dict]:
     return result
 
 
-def observe_projects(args) -> int:
-    projects = project_inventory(Path(args.root))
-    for project in projects:
+def record_project_observations(root: Path) -> tuple[int, int]:
+    """Append changed Git snapshots and preserve unrelated entity records."""
+    appended = 0
+    skipped = 0
+    for project in project_inventory(root):
         entity = f"project:{project['name']}"
-        previous = next(iter(reversed(active_records(entity))), None)
+        text = json.dumps(project, ensure_ascii=False, sort_keys=True)
+        previous = next((
+            item for item in reversed(active_records(entity))
+            if item.get("kind") == "observation" and "git" in item.get("tags", [])
+        ), None)
+        if previous and previous.get("text") == text:
+            skipped += 1
+            continue
         record = {
             "id": new_id(), "ts": timestamp(), "kind": "observation",
-            "entity": entity,
-            "text": json.dumps(project, ensure_ascii=False, sort_keys=True),
-            "status": "active", "source": {"kind": "filesystem", "ref": project["path"]},
+            "entity": entity, "text": text, "status": "active",
+            "source": {"kind": "filesystem", "ref": project["path"]},
             "confidence": 1.0, "tags": ["git", "inventory"],
             "supersedes": previous["id"] if previous else None,
             "relations": [{"type": "relates_to", "entity": "nqai-atlas"}],
         }
         append_record(record)
-    print(f"observed projects: {len(projects)}")
+        appended += 1
+    return appended, skipped
+
+def observe_projects(args) -> int:
+    appended, skipped = record_project_observations(Path(args.root))
+    print(f"observed projects: {appended}; unchanged: {skipped}")
     return 0
 
 

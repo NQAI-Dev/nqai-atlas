@@ -1,4 +1,5 @@
 import json
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -67,6 +68,25 @@ class AtlasTests(unittest.TestCase):
             "tags": [], "supersedes": "missing",
         }) + "\n", encoding="utf-8")
         self.assertEqual(atlas.verify(SimpleNamespace()), 1)
+
+    def test_observe_projects_does_not_supersede_other_record_kinds(self):
+        atlas.append_record({
+            "id": "fact-1", "ts": "2026-09-18T00:00:00Z", "kind": "fact",
+            "entity": "project:demo", "text": "durable fact", "status": "active",
+            "source": {"kind": "test", "ref": "x"}, "confidence": 1.0,
+            "tags": [], "supersedes": None, "relations": [],
+        })
+        projects = Path(self.tmp.name) / "projects"
+        project = projects / "demo"
+        (project / ".git").mkdir(parents=True)
+
+        with patch.object(atlas, "project_inventory", return_value=[{
+            "name": "demo", "path": str(project), "branch": "main",
+            "dirty": False, "changed": 0, "last_commit": "abc initial",
+        }]):
+            self.assertEqual(atlas.observe_projects(SimpleNamespace(root=str(projects))), 0)
+
+        self.assertIsNone(atlas.records()[-1]["supersedes"])
 
 
 if __name__ == "__main__":
