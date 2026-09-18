@@ -69,10 +69,67 @@ class McpTests(unittest.TestCase):
         list_resp = self.client.call("resources/list")
         self.assertEqual({r["uri"] for r in list_resp["result"]["resources"]}, {"atlas://records"})
 
+        templates_resp = self.client.call("resources/templates/list")
+        templates = templates_resp["result"]["resourceTemplates"]
+        self.assertEqual(templates[0]["uriTemplate"], "atlas://entity/{entity}")
+
         read_resp = self.client.call("resources/read", {"uri": "atlas://records"})
         contents = read_resp["result"]["contents"]
         self.assertEqual(contents[0]["mimeType"], "application/jsonl")
         self.assertEqual(contents[0]["text"], "")
+
+    def test_entity_context_resource_template_and_read(self):
+        templates_resp = self.client.call("resources/templates/list")
+        templates = templates_resp["result"]["resourceTemplates"]
+        self.assertEqual(templates[0]["uriTemplate"], "atlas://entity/{entity}")
+        self.assertEqual(templates[0]["mimeType"], "text/plain")
+
+        add_resp = self.client.call("tools/call", {
+            "name": "atlas_add",
+            "arguments": {
+                "kind": "fact", "entity": "project:mcp/demo", "text": "resource context",
+                "source": "test",
+            },
+        })
+        self.assertFalse(add_resp["result"]["isError"])
+
+        uri = "atlas://entity/project%3Amcp%2Fdemo"
+        read_resp = self.client.call("resources/read", {"uri": uri})
+        contents = read_resp["result"]["contents"]
+        self.assertEqual(contents[0]["uri"], uri)
+        self.assertEqual(contents[0]["mimeType"], "text/plain")
+        self.assertIn("Context: project:mcp/demo", contents[0]["text"])
+        self.assertIn("resource context", contents[0]["text"])
+
+    def test_entity_context_resource_rejects_malformed_uri(self):
+        response = self.client.call("resources/read", {"uri": "atlas://entity/"})
+        self.assertEqual(response["error"]["code"], -32602)
+
+    def test_entity_context_resource(self):
+        self.client.call("tools/call", {
+            "name": "atlas_add",
+            "arguments": {
+                "kind": "fact", "entity": "project:mcp", "text": "resource context",
+                "source": "test", "relations": ["service:mcp"],
+            },
+        })
+
+        response = self.client.call("resources/read", {"uri": "atlas://entity/project%3Amcp"})
+        contents = response["result"]["contents"]
+        self.assertEqual(contents[0]["mimeType"], "text/plain")
+        self.assertIn("Context: project:mcp", contents[0]["text"])
+        self.assertIn("resource context", contents[0]["text"])
+
+    def test_entity_context_resource_unknown_entity(self):
+        response = self.client.call("resources/read", {"uri": "atlas://entity/project%3Anone"})
+        self.assertEqual(
+            response["result"]["contents"][0]["text"],
+            "No context for entity: project:none",
+        )
+
+    def test_entity_context_resource_rejects_empty_entity(self):
+        response = self.client.call("resources/read", {"uri": "atlas://entity/"})
+        self.assertEqual(response["error"]["code"], -32602)
 
     def test_atlas_add_and_search_round_trip(self):
         add_resp = self.client.call("tools/call", {

@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from urllib.parse import unquote
+from urllib.parse import unquote
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
@@ -29,6 +31,24 @@ def records_text(items):
         for r in items
     )
 
+
+def entity_resource_uri(entity: str) -> str:
+    """Return the Atlas resource URI for an entity name."""
+    from urllib.parse import quote
+
+    return "atlas://entity/" + quote(entity, safe="")
+
+
+def entity_from_resource_uri(uri: str) -> str | None:
+    """Extract an entity name from a concrete Atlas entity resource URI."""
+    prefix = "atlas://entity/"
+    if not uri.startswith(prefix):
+        return None
+    encoded = uri[len(prefix):]
+    if not encoded or "/" in encoded:
+        return None
+    entity = unquote(encoded)
+    return entity if entity else None
 
 def call_tool(name, args):
     if name == "atlas_search":
@@ -113,11 +133,22 @@ def handle(req):
         ]})
     if method == "resources/list":
         return result(request_id, {"resources": [{"uri": "atlas://records", "name": "Atlas records", "description": "Current durable Atlas records", "mimeType": "application/jsonl"}]})
+    if method == "resources/templates/list":
+        return result(request_id, {"resourceTemplates": [{
+            "uriTemplate": "atlas://entity/{entity}",
+            "name": "Atlas entity context",
+            "description": "Current own and explicitly related records for an Atlas entity. Percent-encode reserved characters in entity names.",
+            "mimeType": "text/plain",
+        }]})
     if method == "resources/read":
-        if req.get("params", {}).get("uri") != "atlas://records":
-            return error(request_id, -32602, "unknown resource")
-        text = atlas.RECORDS.read_text(encoding="utf-8") if atlas.RECORDS.exists() else ""
-        return result(request_id, {"contents": [{"uri": "atlas://records", "mimeType": "application/jsonl", "text": text}]})
+        uri = req.get("params", {}).get("uri", "")
+        if uri == "atlas://records":
+            text = atlas.RECORDS.read_text(encoding="utf-8") if atlas.RECORDS.exists() else ""
+            return result(request_id, {"contents": [{"uri": uri, "mimeType": "application/jsonl", "text": text}]})
+        entity = entity_from_resource_uri(uri)
+        if entity is not None:
+            return result(request_id, {"contents": [{"uri": uri, "mimeType": "text/plain", "text": atlas.context_entity(entity)}]})
+        return error(request_id, -32602, "unknown resource")
     if method == "tools/call":
         params = req.get("params", {})
         try:
