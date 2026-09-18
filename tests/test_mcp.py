@@ -62,7 +62,7 @@ class McpTests(unittest.TestCase):
         self.assertEqual(
             names,
             {"atlas_search", "atlas_add", "atlas_context", "atlas_health_check",
-             "atlas_observe_projects", "atlas_explain", "atlas_history", "atlas_verify", "atlas_suggest"},
+             "atlas_observe_projects", "atlas_explain", "atlas_history", "atlas_verify", "atlas_suggest", "atlas_review"},
         )
 
     def test_resources_list_and_read_empty(self):
