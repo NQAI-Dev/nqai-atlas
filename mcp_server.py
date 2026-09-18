@@ -124,6 +124,10 @@ def call_tool(name, args):
         entity = args.get("entity") or None
         days = int(args.get("days", atlas._REVIEW_WINDOW_DAYS))
         return atlas.render_review(atlas.review_report(entity, days))
+    if name == "atlas_progress":
+        entity = args.get("entity") or None
+        days = int(args.get("days", atlas._REVIEW_WINDOW_DAYS))
+        return atlas.render_progress(atlas.progress_report(entity, days))
     if name == "atlas_verify":
         code = atlas.verify(type("Args", (), {})())
         if code:

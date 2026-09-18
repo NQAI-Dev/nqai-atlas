@@ -473,6 +473,73 @@ def review(args) -> int:
     print(render_review(review_report(args.entity, args.days)))
     return 0
 
+
+def progress_report(entity: str | None = None, days: int = _REVIEW_WINDOW_DAYS) -> dict:
+    """Progress report surfacing evidence (commits, tests, URLs, blockers)."""
+    if days < 1:
+        raise ValueError("days must be >= 1")
+    window_start = datetime.now(timezone.utc) - timedelta(days=days)
+    items = records()
+    
+    evidence_records = []
+    for r in items:
+        ts = _parse_ts(r.get("ts", ""))
+        if not ts or ts < window_start:
+            continue
+        if entity and r.get("entity") != entity:
+            continue
+            
+        text = r.get("text", "").lower()
+        ev_types = set()
+        if "commit" in text: ev_types.add("commit")
+        if "test" in text: ev_types.add("test")
+        if "url" in text or "http" in text: ev_types.add("url")
+        if "blocker" in text: ev_types.add("blocker")
+        
+        for t in r.get("tags", []):
+            tl = t.lower()
+            if tl.startswith("commit"): ev_types.add("commit")
+            if tl.startswith("test"): ev_types.add("test")
+            if tl.startswith("url"): ev_types.add("url")
+            if tl.startswith("blocker"): ev_types.add("blocker")
+            
+        if ev_types or r.get("kind") in ("goal", "decision"):
+            evidence_records.append({
+                "id": r["id"],
+                "kind": r["kind"],
+                "entity": r["entity"],
+                "text": r["text"],
+                "evidence_types": sorted(list(ev_types))
+            })
+            
+    return {
+        "generated_at": timestamp(),
+        "window_days": days,
+        "entity": entity,
+        "evidence": evidence_records
+    }
+
+def render_progress(report: dict) -> str:
+    """Render a progress report dict as a human-readable digest."""
+    scope = f" for {report['entity']}" if report.get("entity") else ""
+    lines = [
+        f"Atlas progress report{scope} ({report['generated_at']})",
+        f"Window: {report['window_days']}d — evidence records: {len(report['evidence'])}"
+    ]
+    if not report['evidence']:
+        lines.append("No evidence found in this window.")
+        return "\n".join(lines)
+        
+    for item in report['evidence']:
+        ev_str = f" [{','.join(item['evidence_types'])}]" if item['evidence_types'] else ""
+        lines.append(f"- {item['entity']} ({item['kind']}){ev_str}: {item['text']}")
+        
+    return "\n".join(lines)
+
+def progress(args) -> int:
+    """CLI handler: print the progress report."""
+    print(render_progress(progress_report(args.entity, args.days)))
+    return 0
 def verify(_args) -> int:
     _bootstrap_runtime_store()
     seen = set()
@@ -512,6 +579,7 @@ def main() -> int:
     command = sub.add_parser("explain"); command.add_argument("--entity", required=True); command.set_defaults(fn=explain)
     command = sub.add_parser("suggest"); command.add_argument("--entity"); command.set_defaults(fn=suggest)
     command = sub.add_parser("review"); command.add_argument("--entity"); command.add_argument("--days", type=int, default=_REVIEW_WINDOW_DAYS); command.set_defaults(fn=review)
+    command = sub.add_parser("progress"); command.add_argument("--entity"); command.add_argument("--days", type=int, default=_REVIEW_WINDOW_DAYS); command.set_defaults(fn=progress)
     command = sub.add_parser("verify"); command.set_defaults(fn=verify)
     args = parser.parse_args()
     return args.fn(args)
