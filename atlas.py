@@ -7,7 +7,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -300,6 +300,7 @@ def explain(args) -> int:
 _GOAL_STALE_DAYS = 14        # goals older than this without progress
 _DECISION_STALE_DAYS = 20   # decisions worth re-evaluating
 _HEALTH_STALE_DAYS = 2      # health-checks older than this
+_REVIEW_WINDOW_DAYS = 7     # default recent-activity window for review
 
 
 def _parse_ts(value: str) -> datetime | None:
@@ -414,6 +415,64 @@ def suggest(args) -> int:
     return 0
 
 
+def review_report(entity: str | None = None, days: int = _REVIEW_WINDOW_DAYS) -> dict:
+    """Weekly-style digest: recent activity, open goals, and grouped stale items.
+
+    Recent activity counts every appended record (any status) inside the
+    window; open goals and stale-item groups use the same current-view and
+    suggest_next engine as the rest of Atlas.
+    """
+    if days < 1:
+        raise ValueError("days must be >= 1")
+    window_start = datetime.now(timezone.utc) - timedelta(days=days)
+    items = records()
+    if entity:
+        items = [record for record in items if record.get("entity") == entity]
+    recent = sum(
+        1 for record in items
+        if (parsed := _parse_ts(record.get("ts", ""))) is not None and parsed >= window_start
+    )
+    current: list[dict] = []
+    for name in {record["entity"] for record in items}:
+        current.extend(current_records(name))
+    open_goals = sum(1 for record in current if record.get("kind") == "goal")
+    return {
+        "generated_at": timestamp(),
+        "window_days": days,
+        "entity": entity,
+        "total_records": len(items),
+        "recent_records": recent,
+        "open_goals": open_goals,
+        "suggestions": suggest_next(entity),
+    }
+
+def render_review(report: dict) -> str:
+    """Render a review_report dict as a human-readable digest grouped by priority."""
+    scope = f" for {report['entity']}" if report.get("entity") else ""
+    lines = [
+        f"Atlas review{scope} ({report['generated_at']})",
+        f"Window: {report['window_days']}d — records: {report['total_records']}, "
+        f"recent: {report['recent_records']}, open goals: {report['open_goals']}",
+    ]
+    suggestions = report.get("suggestions", [])
+    if not suggestions:
+        lines.append("No stale items — goals current, decisions fresh, health checks on schedule.")
+        return "\n".join(lines)
+    for priority in ("high", "medium", "low"):
+        group = [item for item in suggestions if item["priority"] == priority]
+        if group:
+            lines.append(f"{priority.upper()} ({len(group)}):")
+            lines.extend(
+                f"  {item['entity']} — {item['action']}: {item['reason']} (record: {item['record_id']})"
+                for item in group
+            )
+    return "\n".join(lines)
+
+def review(args) -> int:
+    """CLI handler: print the weekly review digest."""
+    print(render_review(review_report(args.entity, args.days)))
+    return 0
+
 def verify(_args) -> int:
     _bootstrap_runtime_store()
     seen = set()
@@ -452,6 +511,7 @@ def main() -> int:
     command = sub.add_parser("observe-projects"); command.add_argument("--root", default=str(DEFAULT_PROJECTS)); command.set_defaults(fn=observe_projects)
     command = sub.add_parser("explain"); command.add_argument("--entity", required=True); command.set_defaults(fn=explain)
     command = sub.add_parser("suggest"); command.add_argument("--entity"); command.set_defaults(fn=suggest)
+    command = sub.add_parser("review"); command.add_argument("--entity"); command.add_argument("--days", type=int, default=_REVIEW_WINDOW_DAYS); command.set_defaults(fn=review)
     command = sub.add_parser("verify"); command.set_defaults(fn=verify)
     args = parser.parse_args()
     return args.fn(args)

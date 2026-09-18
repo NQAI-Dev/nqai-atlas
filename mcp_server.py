@@ -120,6 +120,10 @@ def call_tool(name, args):
             for s in items
         ]
         return "\n".join(lines)
+    if name == "atlas_review":
+        entity = args.get("entity") or None
+        days = int(args.get("days", atlas._REVIEW_WINDOW_DAYS))
+        return atlas.render_review(atlas.review_report(entity, days))
     if name == "atlas_verify":
         code = atlas.verify(type("Args", (), {})())
         if code:
@@ -145,6 +149,7 @@ def handle(req):
             {"name": "atlas_history", "description": "Show every record for an entity chronologically, including superseded and archived claims.", "inputSchema": {"type": "object", "required": ["entity"], "properties": {"entity": {"type": "string"}}}},
             {"name": "atlas_verify", "description": "Validate Atlas JSONL integrity, IDs, timestamps, kinds, statuses, and supersedes links.", "inputSchema": {"type": "object", "properties": {}}},
             {"name": "atlas_suggest", "description": "Surface concrete next-step suggestions from active Atlas records, ranked by priority. Flags stale goals, old decisions, overdue health checks, and dirty git snapshots.", "inputSchema": {"type": "object", "properties": {"entity": {"type": "string", "description": "Restrict suggestions to a specific entity (optional)"}}}},
+            {"name": "atlas_review", "description": "Weekly-style review digest: recent record activity, open goals, and stale items (old decisions, overdue goals/health checks, dirty git snapshots) grouped by priority.", "inputSchema": {"type": "object", "properties": {"entity": {"type": "string", "description": "Restrict the review to a specific entity (optional)"}, "days": {"type": "integer", "minimum": 1, "description": "Recent-activity window in days (default 7)"}}}},
         ]})
     if method == "resources/list":
         return result(request_id, {"resources": [{"uri": "atlas://records", "name": "Atlas records", "description": "Current durable Atlas records", "mimeType": "application/jsonl"}]})
