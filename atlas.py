@@ -280,6 +280,117 @@ def explain(args) -> int:
     return 0
 
 
+# ── suggest_next ─────────────────────────────────────────────────────────────
+
+_GOAL_STALE_DAYS = 14        # goals older than this without progress
+_DECISION_STALE_DAYS = 20   # decisions worth re-evaluating
+_HEALTH_STALE_DAYS = 2      # health-checks older than this
+
+
+def _parse_ts(value: str) -> datetime | None:
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except (ValueError, AttributeError):
+        return None
+
+
+def _age_days(record: dict) -> float:
+    """Age in fractional days, using the record's own ts."""
+    dt = _parse_ts(record.get("ts", ""))
+    if dt is None:
+        return 0.0
+    return (datetime.now(timezone.utc) - dt).total_seconds() / 86400
+
+
+def suggest_next(entity: str | None = None) -> list[dict]:
+    """Return a ranked list of concrete suggested actions based on active records.
+
+    Each suggestion is a dict with keys:
+      entity   – the entity the suggestion concerns
+      action   – short action identifier
+      reason   – human-readable explanation
+      priority – 'high' | 'medium' | 'low'
+      record_id – the triggering record's id
+    """
+    active = active_records(entity)
+    suggestions: list[dict] = []
+    seen: set[tuple[str, str]] = set()   # (entity, action) dedup
+
+    def _add(ent: str, action: str, reason: str, priority: str, record_id: str) -> None:
+        key = (ent, action)
+        if key in seen:
+            return
+        seen.add(key)
+        suggestions.append({"entity": ent, "action": action, "reason": reason,
+                             "priority": priority, "record_id": record_id})
+
+    for record in active:
+        ent = record["entity"]
+        kind = record["kind"]
+        tags = record.get("tags", [])
+        age = _age_days(record)
+
+        # ── stale goals ──────────────────────────────────────────────────────
+        if kind == "goal" and age >= _GOAL_STALE_DAYS:
+            priority = "high" if age >= _GOAL_STALE_DAYS * 2 else "medium"
+            _add(ent, "review-goal",
+                 f"Goal is {int(age)} days old without a recorded update — re-evaluate or record progress",
+                 priority, record["id"])
+
+        # ── stale decisions ───────────────────────────────────────────────────
+        elif kind == "decision" and age >= _DECISION_STALE_DAYS:
+            _add(ent, "review-decision",
+                 f"Decision is {int(age)} days old — confirm still valid or supersede it",
+                 "medium", record["id"])
+
+        # ── stale health checks ───────────────────────────────────────────────
+        elif kind == "observation" and "health-check" in tags:
+            # Try to read checked_at from the payload; fall back to record ts.
+            try:
+                payload = json.loads(record["text"])
+                checked_at_str = payload.get("checked_at", record["ts"])
+            except (json.JSONDecodeError, TypeError):
+                checked_at_str = record["ts"]
+            checked_dt = _parse_ts(checked_at_str)
+            if checked_dt is not None:
+                check_age = (datetime.now(timezone.utc) - checked_dt).total_seconds() / 86400
+                if check_age >= _HEALTH_STALE_DAYS:
+                    _add(ent, "re-check-health",
+                         f"Health check from source '{record.get('source', {}).get('ref', '?')}' "
+                         f"is {int(check_age)} days old — run a new health check",
+                         "medium", record["id"])
+
+        # ── dirty git snapshot ────────────────────────────────────────────────
+        elif kind == "observation" and "git" in tags and "inventory" in tags:
+            try:
+                snapshot = json.loads(record["text"])
+                if snapshot.get("dirty"):
+                    changed = snapshot.get("changed", 0)
+                    _add(ent, "commit-dirty-work",
+                         f"Project has {changed} uncommitted change(s) — commit or stash",
+                         "low", record["id"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+
+    # Sort: high > medium > low, then by entity name for stability.
+    order = {"high": 0, "medium": 1, "low": 2}
+    suggestions.sort(key=lambda s: (order[s["priority"]], s["entity"]))
+    return suggestions
+
+
+def suggest(args) -> int:
+    """CLI handler: print ranked next-step suggestions."""
+    entity = getattr(args, "entity", None)
+    items = suggest_next(entity)
+    if not items:
+        print("No suggestions — Atlas records are current.")
+        return 0
+    for item in items:
+        print(f"[{item['priority'].upper()}] {item['entity']} — {item['action']}: {item['reason']} "
+              f"(record: {item['record_id']})")
+    return 0
+
+
 def verify(_args) -> int:
     seen = set()
     errors = []
@@ -316,6 +427,7 @@ def main() -> int:
     command = sub.add_parser("history"); command.add_argument("--entity", required=True); command.set_defaults(fn=lambda args: print(history_entity(args.entity)) or 0)
     command = sub.add_parser("observe-projects"); command.add_argument("--root", default=str(DEFAULT_PROJECTS)); command.set_defaults(fn=observe_projects)
     command = sub.add_parser("explain"); command.add_argument("--entity", required=True); command.set_defaults(fn=explain)
+    command = sub.add_parser("suggest"); command.add_argument("--entity"); command.set_defaults(fn=suggest)
     command = sub.add_parser("verify"); command.set_defaults(fn=verify)
     args = parser.parse_args()
     return args.fn(args)

@@ -112,6 +112,16 @@ def call_tool(name, args):
         if not entity:
             raise ValueError("entity is required")
         return atlas.history_entity(entity)
+    if name == "atlas_suggest":
+        entity = args.get("entity") or None
+        items = atlas.suggest_next(entity)
+        if not items:
+            return "No suggestions — Atlas records are current."
+        lines = [
+            f"[{s['priority'].upper()}] {s['entity']} — {s['action']}: {s['reason']} (record: {s['record_id']})"
+            for s in items
+        ]
+        return "\n".join(lines)
     if name == "atlas_verify":
         code = atlas.verify(type("Args", (), {})())
         if code:
@@ -136,6 +146,7 @@ def handle(req):
             {"name": "atlas_explain", "description": "Explain the current active records for an entity and show their supersedes history.", "inputSchema": {"type": "object", "required": ["entity"], "properties": {"entity": {"type": "string"}}}},
             {"name": "atlas_history", "description": "Show every record for an entity chronologically, including superseded and archived claims.", "inputSchema": {"type": "object", "required": ["entity"], "properties": {"entity": {"type": "string"}}}},
             {"name": "atlas_verify", "description": "Validate Atlas JSONL integrity, IDs, timestamps, kinds, statuses, and supersedes links.", "inputSchema": {"type": "object", "properties": {}}},
+            {"name": "atlas_suggest", "description": "Surface concrete next-step suggestions from active Atlas records, ranked by priority. Flags stale goals, old decisions, overdue health checks, and dirty git snapshots.", "inputSchema": {"type": "object", "properties": {"entity": {"type": "string", "description": "Restrict suggestions to a specific entity (optional)"}}}},
         ]})
     if method == "resources/list":
         return result(request_id, {"resources": [{"uri": "atlas://records", "name": "Atlas records", "description": "Current durable Atlas records", "mimeType": "application/jsonl"}]})
