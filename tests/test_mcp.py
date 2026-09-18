@@ -61,8 +61,8 @@ class McpTests(unittest.TestCase):
         names = {tool["name"] for tool in response["result"]["tools"]}
         self.assertEqual(
             names,
-            {"atlas_search", "atlas_add", "atlas_context", "atlas_observe_projects",
-             "atlas_explain", "atlas_verify"},
+            {"atlas_search", "atlas_add", "atlas_context", "atlas_health_check",
+             "atlas_observe_projects", "atlas_explain", "atlas_verify"},
         )
 
     def test_resources_list_and_read_empty(self):
@@ -88,6 +88,22 @@ class McpTests(unittest.TestCase):
         })
         self.assertFalse(search_resp["result"]["isError"])
         self.assertIn("hello", search_resp["result"]["content"][0]["text"])
+
+    def test_atlas_health_check_round_trip(self):
+        response = self.client.call("tools/call", {
+            "name": "atlas_health_check",
+            "arguments": {
+                "entity": "service:mcp", "status": "healthy", "source": "probe:mcp",
+                "checked_at": "2026-09-18T20:00:00Z",
+            },
+        })
+        self.assertFalse(response["result"]["isError"])
+        self.assertIn("health-check record", response["result"]["content"][0]["text"])
+
+        search = self.client.call("tools/call", {
+            "name": "atlas_search", "arguments": {"entity": "service:mcp", "active": True},
+        })
+        self.assertIn("2026-09-18T20:00:00Z", search["result"]["content"][0]["text"])
 
     def test_atlas_add_rejects_missing_required(self):
         response = self.client.call("tools/call", {

@@ -10,9 +10,13 @@ python3 atlas.py add --kind decision --entity nqai-atlas \
   --source "telegram:2026-09-12"
 python3 atlas.py search --entity nqai-atlas --active
 python3 atlas.py observe-projects --root /home/openclaw/Projects
+python3 atlas.py health-check --entity service:api --status healthy \
+  --source "https://api.example/health" --checked-at "2026-09-18T20:00:00Z"
 python3 atlas.py verify
 ```
 
 Записи лежат в `data/records.jsonl`. История не переписывается: новая запись может указать `--supersedes`, а старой записи можно присвоить `status: superseded`.
 
 `observe-projects` сохраняет Git-снимок каждого проекта как observation, пропускает неизменившиеся снимки и связывает изменившийся снимок с предыдущим через `supersedes`.
+
+`health-check` сохраняет статус (`healthy`, `degraded`, `unhealthy`, `unknown`), время фактической проверки и источник. Новая проверка замещает только предыдущую запись того же источника; независимые проверки одной сущности остаются видимыми одновременно.

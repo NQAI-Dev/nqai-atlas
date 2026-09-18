@@ -55,13 +55,23 @@ def active_records(entity: str | None = None) -> list[dict]:
 
 
 def current_records(entity: str) -> list[dict]:
-    """Return current records; observations are snapshots, not simultaneous facts."""
+    """Return current records while preserving independent observation streams."""
     current = active_records(entity)
-    observations = [item for item in current if item.get("kind") == "observation"]
-    if len(observations) <= 1:
-        return current
-    latest = max(observations, key=lambda item: item.get("ts", ""))
-    return [item for item in current if item.get("kind") != "observation"] + [latest]
+    non_observations = [item for item in current if item.get("kind") != "observation"]
+    observations: dict[tuple, dict] = {}
+    for item in current:
+        if item.get("kind") != "observation":
+            continue
+        source = item.get("source", {})
+        stream = (
+            tuple(sorted(item.get("tags", []))),
+            source.get("kind"),
+            source.get("ref"),
+        )
+        previous = observations.get(stream)
+        if previous is None or item.get("ts", "") > previous.get("ts", ""):
+            observations[stream] = item
+    return non_observations + list(observations.values())
 
 
 def entity_type(entity: str) -> str:
@@ -132,6 +142,46 @@ def record_project_observations(root: Path) -> tuple[int, int]:
         append_record(record)
         appended += 1
     return appended, skipped
+
+
+def record_health_check(entity: str, status: str, source: str, checked_at: str | None = None,
+                        detail: str | None = None, source_kind: str = "health-check") -> dict:
+    """Append a health observation and supersede the prior result from this source."""
+    if status not in {"healthy", "degraded", "unhealthy", "unknown"}:
+        raise ValueError("health status must be healthy, degraded, unhealthy, or unknown")
+    observed_at = checked_at or timestamp()
+    try:
+        datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+    except ValueError as error:
+        raise ValueError("checked_at must be an ISO-8601 timestamp") from error
+    previous = next((
+        item for item in reversed(active_records(entity))
+        if item.get("kind") == "observation"
+        and "health-check" in item.get("tags", [])
+        and item.get("source", {}).get("kind") == source_kind
+        and item.get("source", {}).get("ref") == source
+    ), None)
+    payload = {"status": status, "checked_at": observed_at}
+    if detail:
+        payload["detail"] = detail
+    record = {
+        "id": new_id(), "ts": timestamp(), "kind": "observation",
+        "entity": entity, "text": json.dumps(payload, ensure_ascii=False, sort_keys=True),
+        "status": "active", "source": {"kind": source_kind, "ref": source},
+        "confidence": 1.0, "tags": ["health-check", status],
+        "supersedes": previous["id"] if previous else None, "relations": [],
+    }
+    append_record(record)
+    return record
+
+
+def health_check(args) -> int:
+    record = record_health_check(
+        args.entity, args.health_status, args.source, args.checked_at, args.detail,
+        getattr(args, "source_kind", "health-check"),
+    )
+    print(record["id"])
+    return 0
 
 def observe_projects(args) -> int:
     appended, skipped = record_project_observations(Path(args.root))
@@ -236,6 +286,7 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(required=True)
     command = sub.add_parser("add"); command.add_argument("--kind", required=True); command.add_argument("--entity", required=True); command.add_argument("--text", required=True); command.add_argument("--source", required=True); command.add_argument("--status", default="active", choices=sorted(STATUSES)); command.add_argument("--confidence", type=float, default=1.0); command.add_argument("--tag", action="append", default=[]); command.add_argument("--supersedes"); command.add_argument("--relation", action="append", default=[], type=lambda value: {"type": "relates_to", "entity": value}); command.set_defaults(fn=add)
+    command = sub.add_parser("health-check"); command.add_argument("--entity", required=True); command.add_argument("--status", dest="health_status", required=True, choices=["healthy", "degraded", "unhealthy", "unknown"]); command.add_argument("--source", required=True); command.add_argument("--source-kind", default="health-check"); command.add_argument("--checked-at"); command.add_argument("--detail"); command.set_defaults(fn=health_check)
     command = sub.add_parser("search"); command.add_argument("--entity"); command.add_argument("--kind"); command.add_argument("--text"); command.add_argument("--active", action="store_true"); command.set_defaults(fn=search)
     command = sub.add_parser("context"); command.add_argument("--entity", required=True); command.set_defaults(fn=lambda args: print(context_entity(args.entity)) or 0)
     command = sub.add_parser("observe-projects"); command.add_argument("--root", default=str(DEFAULT_PROJECTS)); command.set_defaults(fn=observe_projects)

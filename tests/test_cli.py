@@ -39,6 +39,23 @@ class CliTests(unittest.TestCase):
         self.assertEqual(record["kind"], "fact")
         self.assertEqual(record["entity"], "project:test")
 
+    def test_health_check_records_source_timestamp_and_history(self):
+        first = run_cli(
+            self.records, "health-check", "--entity", "service:web", "--status", "healthy",
+            "--source", "https://web/health", "--checked-at", "2026-09-18T20:00:00Z",
+        )
+        self.assertEqual(first.returncode, 0, first.stderr)
+        second = run_cli(
+            self.records, "health-check", "--entity", "service:web", "--status", "unhealthy",
+            "--source", "https://web/health", "--checked-at", "2026-09-18T20:05:00Z",
+            "--detail", "HTTP 503",
+        )
+        self.assertEqual(second.returncode, 0, second.stderr)
+        records = [json.loads(line) for line in self.records.read_text(encoding="utf-8").splitlines()]
+        self.assertEqual(records[-1]["supersedes"], records[0]["id"])
+        self.assertEqual(records[-1]["source"], {"kind": "health-check", "ref": "https://web/health"})
+        self.assertEqual(json.loads(records[-1]["text"])["checked_at"], "2026-09-18T20:05:00Z")
+
     def test_add_rejects_invalid_kind(self):
         proc = run_cli(self.records, "add", "--kind", "bogus", "--entity", "project:test",
                        "--text", "x", "--source", "test")

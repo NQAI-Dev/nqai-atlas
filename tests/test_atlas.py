@@ -50,6 +50,34 @@ class AtlasTests(unittest.TestCase):
         current = atlas.current_records("project:test")
         self.assertEqual([item["text"] for item in current], ["new"])
 
+    def test_health_checks_supersede_only_same_source(self):
+        first = atlas.record_health_check(
+            "service:web", "healthy", "https://web/health", "2026-09-18T20:00:00Z",
+        )
+        other = atlas.record_health_check(
+            "service:web", "healthy", "systemd:web", "2026-09-18T20:01:00Z",
+        )
+        latest = atlas.record_health_check(
+            "service:web", "degraded", "https://web/health", "2026-09-18T20:02:00Z", "latency high",
+        )
+
+        self.assertEqual(latest["supersedes"], first["id"])
+        self.assertIsNone(other["supersedes"])
+        current = atlas.current_records("service:web")
+        self.assertEqual({item["source"]["ref"] for item in current}, {"https://web/health", "systemd:web"})
+        payload = json.loads(next(item["text"] for item in current if item["id"] == latest["id"]))
+        self.assertEqual(payload, {
+            "checked_at": "2026-09-18T20:02:00Z",
+            "detail": "latency high",
+            "status": "degraded",
+        })
+
+    def test_health_check_rejects_invalid_status_and_timestamp(self):
+        with self.assertRaisesRegex(ValueError, "health status"):
+            atlas.record_health_check("service:web", "broken", "probe")
+        with self.assertRaisesRegex(ValueError, "ISO-8601"):
+            atlas.record_health_check("service:web", "healthy", "probe", "not-a-time")
+
     def test_verify_rejects_invalid_relation(self):
         self.records.write_text(json.dumps({
             "id": "bad", "ts": "2026-09-12T00:00:00Z", "kind": "fact",

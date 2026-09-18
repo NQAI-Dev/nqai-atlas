@@ -63,6 +63,16 @@ def call_tool(name, args):
         with atlas.RECORDS.open("a", encoding="utf-8") as handle:
             handle.write(json.dumps(record, ensure_ascii=False) + "\n")
         return f"Added Atlas record {record['id']}."
+    if name == "atlas_health_check":
+        required = ("entity", "status", "source")
+        missing = [key for key in required if not args.get(key)]
+        if missing:
+            raise ValueError(f"missing required fields: {', '.join(missing)}")
+        record = atlas.record_health_check(
+            args["entity"], args["status"], args["source"], args.get("checked_at"),
+            args.get("detail"), args.get("source_kind", "health-check"),
+        )
+        return f"Added health-check record {record['id']}."
     if name == "atlas_observe_projects":
         root = Path(args.get("root", str(atlas.DEFAULT_PROJECTS)))
         appended, skipped = atlas.record_project_observations(root)
@@ -96,6 +106,7 @@ def handle(req):
             {"name": "atlas_search", "description": "Search durable Atlas records; inactive records are excluded only when active=true.", "inputSchema": {"type": "object", "properties": {"entity": {"type": "string"}, "kind": {"type": "string", "enum": sorted(atlas.KINDS)}, "text": {"type": "string"}, "active": {"type": "boolean"}}}},
             {"name": "atlas_add", "description": "Append a durable fact, decision, goal, observation, or link to Atlas.", "inputSchema": {"type": "object", "required": ["kind", "entity", "text", "source"], "properties": {"kind": {"type": "string", "enum": sorted(atlas.KINDS)}, "entity": {"type": "string"}, "text": {"type": "string"}, "source": {"type": "string"}, "source_kind": {"type": "string"}, "status": {"type": "string", "enum": sorted(atlas.STATUSES)}, "confidence": {"type": "number", "minimum": 0, "maximum": 1}, "tags": {"type": "array", "items": {"type": "string"}}, "supersedes": {"type": ["string", "null"]}, "relations": {"type": "array", "items": {"type": "string"}}}}},
             {"name": "atlas_context", "description": "Show an entity's own records and records explicitly related to it.", "inputSchema": {"type": "object", "required": ["entity"], "properties": {"entity": {"type": "string"}}}},
+            {"name": "atlas_health_check", "description": "Append a timestamped health observation and supersede the prior result from the same source.", "inputSchema": {"type": "object", "required": ["entity", "status", "source"], "properties": {"entity": {"type": "string"}, "status": {"type": "string", "enum": ["healthy", "degraded", "unhealthy", "unknown"]}, "source": {"type": "string"}, "source_kind": {"type": "string"}, "checked_at": {"type": "string"}, "detail": {"type": "string"}}}},
             {"name": "atlas_observe_projects", "description": "Append a read-only Git inventory observation for local projects.", "inputSchema": {"type": "object", "properties": {"root": {"type": "string"}}}},
             {"name": "atlas_explain", "description": "Explain the current active records for an entity and show their supersedes history.", "inputSchema": {"type": "object", "required": ["entity"], "properties": {"entity": {"type": "string"}}}},
             {"name": "atlas_verify", "description": "Validate Atlas JSONL integrity, IDs, timestamps, kinds, statuses, and supersedes links.", "inputSchema": {"type": "object", "properties": {}}},
