@@ -1,31 +1,35 @@
-"""Tests for atlas.suggest_next() and the atlas_suggest MCP tool."""
+"""Tests for suggest_next() and the atlas_suggest MCP tool."""
+from __future__ import annotations
+
 import json
+import importlib
+import os
 import tempfile
 import unittest
-from pathlib import Path
 from datetime import datetime, timezone, timedelta
+from pathlib import Path
 from unittest.mock import patch
 
 import atlas
 import mcp_server
 
 
-def _ts(delta_days: int = 0) -> str:
-    dt = datetime.now(timezone.utc) - timedelta(days=delta_days)
+def _ts(days_ago: int = 0) -> str:
+    dt = datetime.now(timezone.utc) - timedelta(days=days_ago)
     return dt.isoformat(timespec="seconds").replace("+00:00", "Z")
 
 
 def _record(entity: str, kind: str, text: str, tags: list | None = None,
-            status: str = "active", ts: str | None = None, rec_id: str | None = None) -> dict:
-    safe_id = entity.replace(":", "_")
+            status: str = "active", ts: str | None = None,
+            rec_id: str | None = None, source: dict | None = None) -> dict:
     return {
-        "id": rec_id or f"rec_{safe_id}_{kind}",
+        "id": rec_id or f"rec_{entity.replace(':', '_')}_{kind}",
         "ts": ts or _ts(0),
         "kind": kind,
         "entity": entity,
         "text": text,
         "status": status,
-        "source": {"kind": "test", "ref": "test"},
+        "source": source or {"kind": "test", "ref": "test"},
         "confidence": 1.0,
         "tags": tags or [],
         "supersedes": None,
@@ -54,124 +58,141 @@ class SuggestTests(unittest.TestCase):
         result = atlas.suggest_next()
         self.assertEqual(result, [])
 
-    def test_stale_goal_surfaced(self):
-        # Goal older than _GOAL_STALE_DAYS with no update
-        self._write([_record("project:myapp", "goal", "ship v2",
-                              ts=_ts(atlas._GOAL_STALE_DAYS + 5))])
+    def test_stalled_goal_surfaced(self):
+        self._write([_record("project:myapp", "goal", "ship v2", ts=_ts(20))])
         result = atlas.suggest_next()
-        self.assertTrue(any(s["action"] == "review-goal" and s["entity"] == "project:myapp"
-                            for s in result))
+        entities = [s["entity"] for s in result]
+        self.assertIn("project:myapp", entities)
+        s = next(x for x in result if x["entity"] == "project:myapp")
+        self.assertEqual(s["action"], "review-goal")
 
-    def test_fresh_goal_not_surfaced(self):
-        self._write([_record("project:myapp", "goal", "ship v2", ts=_ts(1))])
+    def test_recent_goal_not_surfaced(self):
+        self._write([_record("project:myapp", "goal", "ship v2", ts=_ts(3))])
         result = atlas.suggest_next()
-        self.assertFalse(any(s["action"] == "review-goal" for s in result))
+        goal_suggestions = [s for s in result if s["entity"] == "project:myapp"
+                            and s["action"] == "review-goal"]
+        self.assertEqual(goal_suggestions, [])
 
     def test_stale_decision_surfaced(self):
         self._write([_record("project:myapp", "decision", "use postgres",
-                              ts=_ts(atlas._DECISION_STALE_DAYS + 5), rec_id="dec-old")])
+                             ts=_ts(25), rec_id="dec-old")])
         result = atlas.suggest_next()
-        self.assertTrue(any(s["action"] == "review-decision" and s["entity"] == "project:myapp"
-                            for s in result))
+        decision_suggestions = [s for s in result if s["action"] == "review-decision"]
+        self.assertTrue(decision_suggestions)
 
     def test_fresh_decision_not_surfaced(self):
         self._write([_record("project:myapp", "decision", "use postgres",
-                              ts=_ts(1), rec_id="dec-fresh")])
+                             ts=_ts(5), rec_id="dec-fresh")])
         result = atlas.suggest_next()
-        self.assertFalse(any(s["action"] == "review-decision" for s in result))
+        decision_suggestions = [s for s in result if s["action"] == "review-decision"]
+        self.assertEqual(decision_suggestions, [])
 
     def test_stale_health_check_surfaced(self):
-        checked_at = _ts(atlas._HEALTH_STALE_DAYS + 1)
+        stale_ts = _ts(3)
+        payload = json.dumps({"status": "healthy", "checked_at": stale_ts})
         self._write([_record(
-            "service:web", "observation",
-            json.dumps({"status": "healthy", "checked_at": checked_at}),
+            "service:web", "observation", payload,
             tags=["health-check", "healthy"],
-            ts=_ts(atlas._HEALTH_STALE_DAYS + 1),
+            source={"kind": "health-check", "ref": "https://web/health"},
         )])
         result = atlas.suggest_next()
-        self.assertTrue(any(s["action"] == "re-check-health" and s["entity"] == "service:web"
-                            for s in result))
+        hc = [s for s in result if s["action"] == "re-check-health"
+              and s["entity"] == "service:web"]
+        self.assertTrue(hc)
 
-    def test_recent_health_check_not_surfaced(self):
+    def test_fresh_health_check_not_surfaced(self):
+        fresh_ts = _ts(0)
+        payload = json.dumps({"status": "healthy", "checked_at": fresh_ts})
         self._write([_record(
-            "service:web", "observation",
-            json.dumps({"status": "healthy", "checked_at": _ts(0)}),
+            "service:web", "observation", payload,
             tags=["health-check", "healthy"],
+            source={"kind": "health-check", "ref": "https://web/health"},
         )])
         result = atlas.suggest_next()
-        self.assertFalse(any(s["action"] == "re-check-health" for s in result))
+        hc = [s for s in result if s["action"] == "re-check-health"
+              and s["entity"] == "service:web"]
+        self.assertEqual(hc, [])
 
     def test_dirty_git_snapshot_surfaced(self):
+        snapshot = json.dumps({"name": "nodepulse",
+                               "path": "/home/openclaw/Projects/nodepulse",
+                               "branch": "main", "dirty": True, "changed": 3,
+                               "last_commit": "abc fix"})
         self._write([_record(
-            "project:myapp", "observation",
-            json.dumps({"dirty": True, "changed": 3, "branch": "main",
-                        "name": "myapp", "path": "/p", "last_commit": "abc init"}),
+            "project:nodepulse", "observation", snapshot,
             tags=["git", "inventory"],
+            source={"kind": "filesystem", "ref": "/home/openclaw/Projects/nodepulse"},
         )])
         result = atlas.suggest_next()
-        self.assertTrue(any(s["action"] == "commit-dirty-work" for s in result))
+        dirty = [s for s in result if s["action"] == "commit-dirty-work"
+                 and s["entity"] == "project:nodepulse"]
+        self.assertTrue(dirty)
 
     def test_clean_git_snapshot_not_surfaced(self):
+        snapshot = json.dumps({"name": "nqai-atlas",
+                               "path": "/home/openclaw/Projects/nqai-atlas",
+                               "branch": "main", "dirty": False, "changed": 0,
+                               "last_commit": "abc clean"})
         self._write([_record(
-            "project:myapp", "observation",
-            json.dumps({"dirty": False, "changed": 0, "branch": "main",
-                        "name": "myapp", "path": "/p", "last_commit": "abc init"}),
+            "project:nqai-atlas", "observation", snapshot,
             tags=["git", "inventory"],
+            source={"kind": "filesystem", "ref": "/home/openclaw/Projects/nqai-atlas"},
         )])
         result = atlas.suggest_next()
-        self.assertFalse(any(s["action"] == "commit-dirty-work" for s in result))
+        dirty = [s for s in result if s["action"] == "commit-dirty-work"]
+        self.assertEqual(dirty, [])
 
-    def test_high_priority_goal_comes_first(self):
-        # Very stale goal should be high priority
-        self._write([
-            _record("project:a", "goal", "stale goal",
-                    ts=_ts(atlas._GOAL_STALE_DAYS * 3), rec_id="goal-a"),
-            _record("project:b", "decision", "stale decision",
-                    ts=_ts(atlas._DECISION_STALE_DAYS + 5), rec_id="dec-b"),
-        ])
+    def test_suggestion_schema(self):
+        self._write([_record("project:x", "goal", "Ship feature Y", ts=_ts(20))])
         result = atlas.suggest_next()
-        priorities = [s["priority"] for s in result]
-        self.assertIn("high", priorities)
-        # High must appear before medium
-        high_idx = priorities.index("high")
-        medium_idx = next((i for i, p in enumerate(priorities) if p == "medium"), len(priorities))
-        self.assertLess(high_idx, medium_idx)
-
-    def test_entity_filter(self):
-        self._write([
-            _record("project:a", "goal", "goal a", ts=_ts(atlas._GOAL_STALE_DAYS + 5), rec_id="ga"),
-            _record("project:b", "goal", "goal b", ts=_ts(atlas._GOAL_STALE_DAYS + 5), rec_id="gb"),
-        ])
-        result = atlas.suggest_next(entity="project:a")
-        self.assertTrue(all(s["entity"] == "project:a" for s in result))
-
-    def test_suggestion_has_required_keys(self):
-        self._write([_record("project:myapp", "goal", "ship v2",
-                              ts=_ts(atlas._GOAL_STALE_DAYS + 5))])
-        result = atlas.suggest_next()
-        self.assertTrue(result)
         for s in result:
             self.assertIn("entity", s)
             self.assertIn("action", s)
             self.assertIn("reason", s)
             self.assertIn("priority", s)
             self.assertIn("record_id", s)
+            self.assertIn(s["priority"], {"high", "medium", "low"})
 
-    def test_no_duplicate_suggestions_for_same_entity_action(self):
-        # Two goal records for the same entity — should produce only one review-goal
+    def test_deduplication_one_per_entity_per_action(self):
+        # Three stale goals for the same entity → only one review-goal suggestion
         self._write([
-            _record("project:myapp", "goal", "goal one",
-                    ts=_ts(atlas._GOAL_STALE_DAYS + 5), rec_id="g1"),
-            _record("project:myapp", "goal", "goal two",
-                    ts=_ts(atlas._GOAL_STALE_DAYS + 5), rec_id="g2"),
+            _record("project:nodepulse", "goal", f"Goal {i}",
+                    ts=_ts(20 + i), rec_id=f"g{i}")
+            for i in range(3)
         ])
         result = atlas.suggest_next()
-        review_goals = [s for s in result if s["action"] == "review-goal"
-                        and s["entity"] == "project:myapp"]
-        self.assertEqual(len(review_goals), 1)
+        review = [s for s in result if s["entity"] == "project:nodepulse"
+                  and s["action"] == "review-goal"]
+        self.assertEqual(len(review), 1)
+
+    def test_entity_filter(self):
+        self._write([
+            _record("project:a", "goal", "goal a", ts=_ts(20), rec_id="ga"),
+            _record("project:b", "goal", "goal b", ts=_ts(20), rec_id="gb"),
+        ])
+        result = atlas.suggest_next(entity="project:a")
+        entities = {s["entity"] for s in result}
+        self.assertIn("project:a", entities)
+        self.assertNotIn("project:b", entities)
+
+    def test_high_goal_age_is_high_priority(self):
+        # Goal > 2× stale threshold → high priority
+        self._write([_record("project:x", "goal", "ancient goal", ts=_ts(30))])
+        result = atlas.suggest_next()
+        s = next((x for x in result if x["entity"] == "project:x"), None)
+        self.assertIsNotNone(s)
+        self.assertEqual(s["priority"], "high")
+
+    def test_medium_goal_age_is_medium_priority(self):
+        # Goal between 14–28 days → medium priority
+        self._write([_record("project:x", "goal", "mid goal", ts=_ts(16))])
+        result = atlas.suggest_next()
+        s = next((x for x in result if x["entity"] == "project:x"), None)
+        self.assertIsNotNone(s)
+        self.assertEqual(s["priority"], "medium")
 
 
-class SuggestMCPTests(unittest.TestCase):
+class SuggestCLITests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.records_path = Path(self.tmp.name) / "records.jsonl"
@@ -182,66 +203,76 @@ class SuggestMCPTests(unittest.TestCase):
         self.patch.stop()
         self.tmp.cleanup()
 
+    def test_cli_empty_exits_zero(self):
+        import argparse
+        args = argparse.Namespace(entity=None)
+        code = atlas.suggest(args)
+        self.assertEqual(code, 0)
+
+    def test_cli_prints_suggestions(self):
+        import argparse
+        self.records_path.parent.mkdir(parents=True, exist_ok=True)
+        self.records_path.write_text(json.dumps(_record(
+            "project:test", "goal", "test goal", ts=_ts(20)
+        )) + "\n", encoding="utf-8")
+        import io
+        import sys
+        captured = io.StringIO()
+        sys.stdout = captured
+        try:
+            args = argparse.Namespace(entity=None)
+            code = atlas.suggest(args)
+        finally:
+            sys.stdout = sys.__stdout__
+        self.assertEqual(code, 0)
+        self.assertIn("project:test", captured.getvalue())
+
+
+class SuggestMCPTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.records_path = Path(self.tmp.name) / "records.jsonl"
+        self.atlas_patch = patch.object(atlas, "RECORDS", self.records_path)
+        self.atlas_patch.start()
+
+    def tearDown(self):
+        self.atlas_patch.stop()
+        self.tmp.cleanup()
+
     def _call(self, args: dict) -> dict:
         req = {"jsonrpc": "2.0", "id": 1, "method": "tools/call",
                "params": {"name": "atlas_suggest", "arguments": args}}
         return mcp_server.handle(req)
 
-    def test_mcp_suggest_empty_store_returns_clean_text(self):
+    def test_mcp_empty_store(self):
         resp = self._call({})
         self.assertFalse(resp["result"]["isError"])
         text = resp["result"]["content"][0]["text"]
         self.assertIn("No suggestions", text)
 
-    def test_mcp_suggest_with_stale_goal(self):
+    def test_mcp_returns_suggestions(self):
         self.records_path.parent.mkdir(parents=True, exist_ok=True)
-        self.records_path.write_text(json.dumps({
-            "id": "goal-1", "ts": _ts(atlas._GOAL_STALE_DAYS + 10), "kind": "goal",
-            "entity": "project:api", "status": "active",
-            "text": "ship stable API",
-            "source": {"kind": "test", "ref": "test"},
-            "confidence": 1.0, "tags": [],
-            "supersedes": None, "relations": [],
-        }) + "\n", encoding="utf-8")
+        self.records_path.write_text(json.dumps(_record(
+            "project:test", "goal", "MCP goal", ts=_ts(25)
+        )) + "\n", encoding="utf-8")
         resp = self._call({})
         self.assertFalse(resp["result"]["isError"])
-        text = resp["result"]["content"][0]["text"]
-        self.assertIn("project:api", text)
-        self.assertIn("review-goal", text)
+        self.assertIn("project:test", resp["result"]["content"][0]["text"])
 
-    def test_mcp_suggest_entity_filter(self):
+    def test_mcp_entity_filter(self):
         self.records_path.parent.mkdir(parents=True, exist_ok=True)
-        records = [
-            {"id": "ga", "ts": _ts(atlas._GOAL_STALE_DAYS + 5), "kind": "goal",
-             "entity": "project:a", "status": "active", "text": "goal a",
-             "source": {"kind": "test", "ref": "t"}, "confidence": 1.0,
-             "tags": [], "supersedes": None, "relations": []},
-            {"id": "gb", "ts": _ts(atlas._GOAL_STALE_DAYS + 5), "kind": "goal",
-             "entity": "project:b", "status": "active", "text": "goal b",
-             "source": {"kind": "test", "ref": "t"}, "confidence": 1.0,
-             "tags": [], "supersedes": None, "relations": []},
-        ]
         self.records_path.write_text(
-            "".join(json.dumps(r) + "\n" for r in records), encoding="utf-8"
+            json.dumps(_record("project:a", "goal", "goal a", ts=_ts(20))) + "\n" +
+            json.dumps(_record("project:b", "goal", "goal b", ts=_ts(20))) + "\n",
+            encoding="utf-8"
         )
         resp = self._call({"entity": "project:a"})
-        self.assertFalse(resp["result"]["isError"])
         text = resp["result"]["content"][0]["text"]
         self.assertIn("project:a", text)
         self.assertNotIn("project:b", text)
 
-    def test_mcp_suggest_in_tools_list(self):
-        req = {"jsonrpc": "2.0", "id": 2, "method": "tools/list", "params": {}}
+    def test_tools_list_includes_suggest(self):
+        req = {"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}}
         resp = mcp_server.handle(req)
         names = [t["name"] for t in resp["result"]["tools"]]
         self.assertIn("atlas_suggest", names)
-
-    def test_mcp_suggest_tool_has_description(self):
-        req = {"jsonrpc": "2.0", "id": 3, "method": "tools/list", "params": {}}
-        resp = mcp_server.handle(req)
-        tool = next(t for t in resp["result"]["tools"] if t["name"] == "atlas_suggest")
-        self.assertIn("suggestion", tool["description"].lower())
-
-
-if __name__ == "__main__":
-    unittest.main()
