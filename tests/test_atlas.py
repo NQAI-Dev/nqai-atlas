@@ -36,6 +36,37 @@ class AtlasTests(unittest.TestCase):
         self.assertIn("CURRENT", explanation)
         self.assertIn("<- " + first["id"], explanation)
 
+
+    def test_history_shows_all_records_chronologically(self):
+        first = {
+            "id": "rec-old", "ts": "2026-09-18T10:00:00Z", "kind": "decision",
+            "entity": "project:atlas", "text": "old claim", "status": "superseded",
+            "source": {"kind": "test", "ref": "one"}, "confidence": 1.0,
+            "tags": [], "supersedes": None, "relations": [],
+        }
+        second = {
+            "id": "rec-new", "ts": "2026-09-18T11:00:00Z", "kind": "decision",
+            "entity": "project:atlas", "text": "new claim", "status": "active",
+            "source": {"kind": "test", "ref": "two"}, "confidence": 1.0,
+            "tags": [], "supersedes": "rec-old", "relations": [],
+        }
+        archived = {
+            "id": "rec-archived", "ts": "2026-09-18T12:00:00Z", "kind": "fact",
+            "entity": "project:atlas", "text": "archived note", "status": "archived",
+            "source": {"kind": "test", "ref": "three"}, "confidence": 1.0,
+            "tags": [], "supersedes": None, "relations": [],
+        }
+        for record in (second, archived, first):
+            atlas.append_record(record)
+
+        history = atlas.history_entity("project:atlas")
+        self.assertIn("Records: 3", history)
+        self.assertLess(history.index("old claim"), history.index("new claim"))
+        self.assertIn("superseded_by=rec-new", history)
+        self.assertIn("supersedes=rec-old", history)
+        self.assertIn("archived note", history)
+        self.assertEqual(atlas.history_entity("missing"), "No history for entity: missing")
+
     def test_current_records_hide_old_observations(self):
         for text in ("old", "new"):
             atlas.append_record({

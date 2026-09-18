@@ -232,6 +232,30 @@ def context_entity(entity: str) -> str:
     return "\n".join(lines)
 
 
+def history_entity(entity: str) -> str:
+    """Show every record for an entity in chronological order without hiding old claims."""
+    items = [record for record in records() if record["entity"] == entity]
+    if not items:
+        return f"No history for entity: {entity}"
+    superseded_by = {
+        record["supersedes"]: record["id"]
+        for record in items
+        if record.get("supersedes")
+    }
+    lines = [f"History: {entity}", f"Records: {len(items)}"]
+    for record in sorted(items, key=lambda item: (item.get("ts", ""), item["id"])):
+        details = [record["status"]]
+        if record.get("supersedes"):
+            details.append(f"supersedes={record['supersedes']}")
+        if record["id"] in superseded_by:
+            details.append(f"superseded_by={superseded_by[record['id']]}")
+        lines.append(
+            f"{record['ts']} {record['id']} [{record['kind']}] "
+            f"{' '.join(details)}: {record['text']}"
+        )
+    return "\n".join(lines)
+
+
 def explain_entity(entity: str) -> str:
     items = [record for record in records() if record["entity"] == entity]
     if not items:
@@ -289,6 +313,7 @@ def main() -> int:
     command = sub.add_parser("health-check"); command.add_argument("--entity", required=True); command.add_argument("--status", dest="health_status", required=True, choices=["healthy", "degraded", "unhealthy", "unknown"]); command.add_argument("--source", required=True); command.add_argument("--source-kind", default="health-check"); command.add_argument("--checked-at"); command.add_argument("--detail"); command.set_defaults(fn=health_check)
     command = sub.add_parser("search"); command.add_argument("--entity"); command.add_argument("--kind"); command.add_argument("--text"); command.add_argument("--active", action="store_true"); command.set_defaults(fn=search)
     command = sub.add_parser("context"); command.add_argument("--entity", required=True); command.set_defaults(fn=lambda args: print(context_entity(args.entity)) or 0)
+    command = sub.add_parser("history"); command.add_argument("--entity", required=True); command.set_defaults(fn=lambda args: print(history_entity(args.entity)) or 0)
     command = sub.add_parser("observe-projects"); command.add_argument("--root", default=str(DEFAULT_PROJECTS)); command.set_defaults(fn=observe_projects)
     command = sub.add_parser("explain"); command.add_argument("--entity", required=True); command.set_defaults(fn=explain)
     command = sub.add_parser("verify"); command.set_defaults(fn=verify)

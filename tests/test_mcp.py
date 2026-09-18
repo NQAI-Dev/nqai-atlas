@@ -62,7 +62,7 @@ class McpTests(unittest.TestCase):
         self.assertEqual(
             names,
             {"atlas_search", "atlas_add", "atlas_context", "atlas_health_check",
-             "atlas_observe_projects", "atlas_explain", "atlas_verify"},
+             "atlas_observe_projects", "atlas_explain", "atlas_history", "atlas_verify"},
         )
 
     def test_resources_list_and_read_empty(self):
@@ -189,6 +189,26 @@ class McpTests(unittest.TestCase):
         response = self.client.call("tools/call", {"name": "atlas_verify", "arguments": {}})
         self.assertFalse(response["result"]["isError"])
         self.assertIn("passed", response["result"]["content"][0]["text"])
+
+    def test_atlas_history_returns_all_entity_records(self):
+        first = self.client.call("tools/call", {
+            "name": "atlas_add",
+            "arguments": {"kind": "fact", "entity": "project:mcp", "text": "first", "source": "test"},
+        })
+        first_id = first["result"]["content"][0]["text"].split()[-1].rstrip(".")
+        self.client.call("tools/call", {
+            "name": "atlas_add",
+            "arguments": {"kind": "fact", "entity": "project:mcp", "text": "second", "source": "test", "supersedes": first_id},
+        })
+
+        response = self.client.call("tools/call", {
+            "name": "atlas_history", "arguments": {"entity": "project:mcp"},
+        })
+        self.assertFalse(response["result"]["isError"])
+        text = response["result"]["content"][0]["text"]
+        self.assertIn("Records: 2", text)
+        self.assertIn("superseded_by=", text)
+        self.assertIn("supersedes=", text)
 
     def test_ping_returns_empty_result(self):
         response = self.client.call("ping")

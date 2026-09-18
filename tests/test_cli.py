@@ -113,6 +113,22 @@ class CliTests(unittest.TestCase):
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn("valid records", proc.stdout)
 
+    def test_history_shows_superseded_and_archived_records(self):
+        first_id = run_cli(self.records, "add", "--kind", "decision", "--entity", "atlas",
+                           "--text", "first", "--source", "test").stdout.strip()
+        run_cli(self.records, "add", "--kind", "decision", "--entity", "atlas",
+                "--text", "second", "--source", "test", "--supersedes", first_id)
+        records = [json.loads(line) for line in self.records.read_text(encoding="utf-8").splitlines()]
+        records[0]["status"] = "superseded"
+        records[1]["status"] = "archived"
+        self.records.write_text("".join(json.dumps(record) + "\n" for record in records), encoding="utf-8")
+
+        proc = run_cli(self.records, "history", "--entity", "atlas")
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        self.assertIn("Records: 2", proc.stdout)
+        self.assertIn("superseded_by=", proc.stdout)
+        self.assertIn("archived", proc.stdout)
+
     def test_verify_empty_store_passes(self):
         proc = run_cli(self.records, "verify")
         self.assertEqual(proc.returncode, 0, proc.stderr)

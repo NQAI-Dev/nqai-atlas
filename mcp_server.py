@@ -107,6 +107,11 @@ def call_tool(name, args):
         if not entity:
             raise ValueError("entity is required")
         return atlas.explain_entity(entity)
+    if name == "atlas_history":
+        entity = args.get("entity")
+        if not entity:
+            raise ValueError("entity is required")
+        return atlas.history_entity(entity)
     if name == "atlas_verify":
         code = atlas.verify(type("Args", (), {})())
         if code:
@@ -129,6 +134,7 @@ def handle(req):
             {"name": "atlas_health_check", "description": "Append a timestamped health observation and supersede the prior result from the same source.", "inputSchema": {"type": "object", "required": ["entity", "status", "source"], "properties": {"entity": {"type": "string"}, "status": {"type": "string", "enum": ["healthy", "degraded", "unhealthy", "unknown"]}, "source": {"type": "string"}, "source_kind": {"type": "string"}, "checked_at": {"type": "string"}, "detail": {"type": "string"}}}},
             {"name": "atlas_observe_projects", "description": "Append a read-only Git inventory observation for local projects.", "inputSchema": {"type": "object", "properties": {"root": {"type": "string"}}}},
             {"name": "atlas_explain", "description": "Explain the current active records for an entity and show their supersedes history.", "inputSchema": {"type": "object", "required": ["entity"], "properties": {"entity": {"type": "string"}}}},
+            {"name": "atlas_history", "description": "Show every record for an entity chronologically, including superseded and archived claims.", "inputSchema": {"type": "object", "required": ["entity"], "properties": {"entity": {"type": "string"}}}},
             {"name": "atlas_verify", "description": "Validate Atlas JSONL integrity, IDs, timestamps, kinds, statuses, and supersedes links.", "inputSchema": {"type": "object", "properties": {}}},
         ]})
     if method == "resources/list":
