@@ -79,9 +79,7 @@ def call_tool(name, args):
         }
         if record["status"] not in atlas.STATUSES:
             raise ValueError("invalid status")
-        atlas.RECORDS.parent.mkdir(parents=True, exist_ok=True)
-        with atlas.RECORDS.open("a", encoding="utf-8") as handle:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+        atlas.append_record(record)
         return f"Added Atlas record {record['id']}."
     if name == "atlas_health_check":
         required = ("entity", "status", "source")
@@ -160,6 +158,7 @@ def handle(req):
     if method == "resources/read":
         uri = req.get("params", {}).get("uri", "")
         if uri == "atlas://records":
+            atlas._bootstrap_runtime_store()
             text = atlas.RECORDS.read_text(encoding="utf-8") if atlas.RECORDS.exists() else ""
             return result(request_id, {"contents": [{"uri": uri, "mimeType": "application/jsonl", "text": text}]})
         entity = entity_from_resource_uri(uri)

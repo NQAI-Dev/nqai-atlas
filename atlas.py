@@ -11,7 +11,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
-RECORDS = Path(os.environ.get("ATLAS_RECORDS") or (ROOT / "data" / "records.jsonl"))
+DEFAULT_RECORDS = ROOT / "data" / "records.jsonl"
+RECORDS = Path(os.environ.get("ATLAS_RECORDS") or DEFAULT_RECORDS)
+SEED = ROOT / "data" / "seed.jsonl"
 DEFAULT_PROJECTS = Path("/home/openclaw/Projects")
 KINDS = {"fact", "decision", "goal", "observation", "link"}
 STATUSES = {"active", "superseded", "archived"}
@@ -24,10 +26,25 @@ def timestamp() -> str:
 
 
 def records():
+    _bootstrap_runtime_store()
     if not RECORDS.exists():
         return []
     with RECORDS.open(encoding="utf-8") as handle:
         return [json.loads(line) for line in handle if line.strip()]
+
+def bootstrap_store(target: Path, seed: Path) -> bool:
+    """Seed a missing runtime store from durable seed records. True if seeded."""
+    if target.exists() or not seed.exists():
+        return False
+    target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(seed.read_text(encoding="utf-8"), encoding="utf-8")
+    return True
+
+def _bootstrap_runtime_store() -> None:
+    """Seed the default runtime store only; env overrides and tests stay untouched."""
+    if RECORDS != DEFAULT_RECORDS:
+        return
+    bootstrap_store(RECORDS, SEED)
 
 
 def new_id() -> str:
@@ -97,6 +114,7 @@ def validate_record(record: dict, seen: set[str] | None = None) -> list[str]:
 
 
 def append_record(record: dict) -> None:
+    _bootstrap_runtime_store()
     RECORDS.parent.mkdir(parents=True, exist_ok=True)
     with RECORDS.open("a", encoding="utf-8") as handle:
         fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
@@ -199,10 +217,7 @@ def add(args) -> int:
         "confidence": args.confidence, "tags": args.tag, "supersedes": args.supersedes,
         "relations": getattr(args, "relation", []),
     }
-    RECORDS.parent.mkdir(parents=True, exist_ok=True)
-    with RECORDS.open("a", encoding="utf-8") as handle:
-        fcntl.flock(handle.fileno(), fcntl.LOCK_EX)
-        handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+    append_record(record)
     print(record["id"])
     return 0
 
@@ -311,8 +326,16 @@ def suggest_next(entity: str | None = None) -> list[dict]:
       reason   – human-readable explanation
       priority – 'high' | 'medium' | 'low'
       record_id – the triggering record's id
+
+    Observations are evaluated per (tags, source) stream — only the latest
+    record of each stream counts, so dangling pre-dedup roots never surface.
     """
-    active = active_records(entity)
+    # Stream-deduped current records per entity: matches what context/explain
+    # treat as current and hides superseded-chain leftovers.
+    entities = {record["entity"] for record in active_records(entity)}
+    pool: list[dict] = []
+    for name in entities:
+        pool.extend(current_records(name))
     suggestions: list[dict] = []
     seen: set[tuple[str, str]] = set()   # (entity, action) dedup
 
@@ -324,7 +347,7 @@ def suggest_next(entity: str | None = None) -> list[dict]:
         suggestions.append({"entity": ent, "action": action, "reason": reason,
                              "priority": priority, "record_id": record_id})
 
-    for record in active:
+    for record in pool:
         ent = record["entity"]
         kind = record["kind"]
         tags = record.get("tags", [])
@@ -392,6 +415,7 @@ def suggest(args) -> int:
 
 
 def verify(_args) -> int:
+    _bootstrap_runtime_store()
     seen = set()
     errors = []
     for line_no, line in enumerate(RECORDS.read_text(encoding="utf-8").splitlines(), 1) if RECORDS.exists() else []:

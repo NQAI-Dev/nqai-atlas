@@ -8,6 +8,37 @@ from unittest.mock import patch
 
 import atlas
 
+class BootstrapTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+
+    def test_bootstrap_creates_missing_store_from_seed(self):
+        seed = Path(self.tmp.name) / "seed.jsonl"
+        seed.write_text(json.dumps({"id": "s1", "ts": "2026-09-18T00:00:00Z",
+                                    "kind": "decision", "entity": "nqai-atlas",
+                                    "text": "seeded", "status": "active",
+                                    "source": {"kind": "conversation", "ref": "seed"},
+                                    "confidence": 1.0, "tags": [], "supersedes": None,
+                                    "relations": []}) + "\n", encoding="utf-8")
+        target = Path(self.tmp.name) / "records.jsonl"
+        self.assertTrue(atlas.bootstrap_store(target, seed))
+        self.assertTrue(target.exists())
+        self.assertEqual(target.read_text(encoding="utf-8"), seed.read_text(encoding="utf-8"))
+
+    def test_bootstrap_skips_existing_store(self):
+        seed = Path(self.tmp.name) / "seed.jsonl"
+        seed.write_text("", encoding="utf-8")
+        target = Path(self.tmp.name) / "records.jsonl"
+        target.write_text("existing\n", encoding="utf-8")
+        self.assertFalse(atlas.bootstrap_store(target, seed))
+        self.assertEqual(target.read_text(encoding="utf-8"), "existing\n")
+
+    def test_bootstrap_without_seed_is_noop(self):
+        target = Path(self.tmp.name) / "records.jsonl"
+        self.assertFalse(atlas.bootstrap_store(target, Path(self.tmp.name) / "absent.jsonl"))
+        self.assertFalse(target.exists())
+
 
 class AtlasTests(unittest.TestCase):
     def setUp(self):

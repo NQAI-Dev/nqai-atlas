@@ -191,6 +191,42 @@ class SuggestTests(unittest.TestCase):
         self.assertIsNotNone(s)
         self.assertEqual(s["priority"], "medium")
 
+    def test_dangling_observation_root_not_surfaced(self):
+        # Pre-dedup debris: an old dirty snapshot was never superseded, but a
+        # newer clean snapshot exists in the same (tags, source) stream.
+        # suggest must evaluate only the stream tip, not the dangling root.
+        old_dirty = json.dumps({"name": "x", "path": "/p/x", "branch": "main",
+                                "dirty": True, "changed": 5, "last_commit": "old"})
+        new_clean = json.dumps({"name": "x", "path": "/p/x", "branch": "main",
+                                "dirty": False, "changed": 0, "last_commit": "new"})
+        src = {"kind": "filesystem", "ref": "/p/x"}
+        self._write([
+            _record("project:x", "observation", old_dirty, tags=["git", "inventory"],
+                    ts=_ts(10), rec_id="dangling-root", source=src),
+            _record("project:x", "observation", new_clean, tags=["git", "inventory"],
+                    ts=_ts(0), rec_id="fresh-tip", source=src),
+        ])
+        result = atlas.suggest_next()
+        dirty = [s for s in result if s["action"] == "commit-dirty-work"]
+        self.assertEqual(dirty, [])
+
+    def test_superseded_record_never_surfaced(self):
+        # Explicitly superseded records stay invisible to suggest even if active-looking
+        old = _record("project:x", "observation",
+                      json.dumps({"name": "x", "path": "/p/x", "branch": "main",
+                                  "dirty": True, "changed": 2, "last_commit": "old"}),
+                      tags=["git", "inventory"], ts=_ts(9), rec_id="sup-old")
+        new = _record("project:x", "observation",
+                      json.dumps({"name": "x", "path": "/p/x", "branch": "main",
+                                  "dirty": False, "changed": 0, "last_commit": "new"}),
+                      tags=["git", "inventory"], ts=_ts(1), rec_id="sup-new",
+                      source={"kind": "filesystem", "ref": "/p/x"})
+        new["supersedes"] = "sup-old"
+        self._write([old, new])
+        result = atlas.suggest_next()
+        dirty = [s for s in result if s["action"] == "commit-dirty-work"]
+        self.assertEqual(dirty, [])
+
 
 class SuggestCLITests(unittest.TestCase):
     def setUp(self):
