@@ -4,8 +4,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from urllib.parse import unquote
-from urllib.parse import unquote
+from urllib.parse import quote, unquote
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
@@ -34,8 +33,6 @@ def records_text(items):
 
 def entity_resource_uri(entity: str) -> str:
     """Return the Atlas resource URI for an entity name."""
-    from urllib.parse import quote
-
     return "atlas://entity/" + quote(entity, safe="")
 
 
