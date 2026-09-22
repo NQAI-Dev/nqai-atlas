@@ -92,6 +92,8 @@ def current_records(entity: str) -> list[dict]:
 
 
 def entity_type(entity: str) -> str:
+    if not isinstance(entity, str):
+        return "unknown"
     return entity.split(":", 1)[0] if ":" in entity else ("nqai" if entity == "nqai-atlas" else "unknown")
 
 
@@ -132,10 +134,14 @@ def validate_record(record: dict, seen: set[str] | None = None) -> list[str]:
     supersedes = record.get("supersedes")
     if supersedes is not None and not isinstance(supersedes, str):
         errors.append("supersedes must be a string or null")
-    if not isinstance(record.get("relations", []), list):
+    relations = record.get("relations", [])
+    if not isinstance(relations, list):
         errors.append("relations must be a list")
-    for relation in record.get("relations", []):
-        if not isinstance(relation, dict) or relation.get("type") not in RELATION_TYPES or not relation.get("entity"):
+    for relation in relations if isinstance(relations, list) else []:
+        if (not isinstance(relation, dict)
+                or relation.get("type") not in RELATION_TYPES
+                or not isinstance(relation.get("entity"), str)
+                or not relation.get("entity")):
             errors.append(f"invalid relation: {relation}")
     if seen is not None and record.get("supersedes") and record["supersedes"] not in seen:
         errors.append(f"unknown supersedes {record['supersedes']}")
