@@ -169,9 +169,11 @@ def record_health_check(entity: str, status: str, source: str, checked_at: str |
         raise ValueError("health status must be healthy, degraded, unhealthy, or unknown")
     observed_at = checked_at or timestamp()
     try:
-        datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
+        parsed_at = datetime.fromisoformat(observed_at.replace("Z", "+00:00"))
     except ValueError as error:
         raise ValueError("checked_at must be an ISO-8601 timestamp") from error
+    if parsed_at.tzinfo is None:
+        raise ValueError("checked_at must include a timezone")
     previous = next((
         item for item in reversed(active_records(entity))
         if item.get("kind") == "observation"
