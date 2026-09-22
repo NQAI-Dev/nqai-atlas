@@ -142,6 +142,10 @@ class AtlasTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "timezone"):
             atlas.record_health_check("service:web", "healthy", "probe", "2026-09-18T20:00:00")
 
+    def test_verify_rejects_non_object_record(self):
+        self.records.write_text('[]\n', encoding="utf-8")
+        self.assertEqual(atlas.verify(SimpleNamespace()), 1)
+
     def test_verify_rejects_invalid_relation(self):
         self.records.write_text(json.dumps({
             "id": "bad", "ts": "2026-09-12T00:00:00Z", "kind": "fact",

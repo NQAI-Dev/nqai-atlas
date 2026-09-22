@@ -96,6 +96,8 @@ def entity_type(entity: str) -> str:
 
 
 def validate_record(record: dict, seen: set[str] | None = None) -> list[str]:
+    if not isinstance(record, dict):
+        return ["record must be a JSON object"]
     errors = []
     required = {"id", "ts", "kind", "entity", "text", "status", "source", "confidence", "tags", "supersedes"}
     missing = required - record.keys()
@@ -580,6 +582,8 @@ def verify(_args) -> int:
             errors.append(f"line {line_no}: invalid JSON ({error.msg})")
             continue
         errors.extend(f"line {line_no}: {error}" for error in validate_record(record, seen))
+        if not isinstance(record, dict):
+            continue
         if record.get("id") in seen: errors.append(f"line {line_no}: duplicate id {record.get('id')}")
         seen.add(record.get("id"))
         if record.get("kind") not in KINDS: errors.append(f"line {line_no}: invalid kind")
@@ -589,6 +593,8 @@ def verify(_args) -> int:
             try: datetime.fromisoformat(record_ts.replace("Z", "+00:00"))
             except ValueError: errors.append(f"line {line_no}: invalid timestamp")
     for record in records():
+        if not isinstance(record, dict):
+            continue
         if record.get("supersedes") and record["supersedes"] not in seen:
             errors.append(f"{record['id']}: unknown supersedes {record['supersedes']}")
     if errors:
