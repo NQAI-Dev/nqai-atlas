@@ -4,7 +4,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from urllib.parse import quote, unquote
+from urllib.parse import quote, unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT))
@@ -38,14 +38,18 @@ def entity_resource_uri(entity: str) -> str:
 
 def entity_from_resource_uri(uri: str) -> str | None:
     """Extract an entity name from a concrete Atlas entity resource URI."""
-    prefix = "atlas://entity/"
-    if not uri.startswith(prefix):
+    parsed = urlsplit(uri)
+    if parsed.scheme != "atlas" or parsed.netloc != "entity":
         return None
-    encoded = uri[len(prefix):]
+    if not parsed.path or parsed.path.startswith("//") or parsed.query or parsed.fragment:
+        return None
+    encoded = parsed.path[1:]
     if not encoded or "/" in encoded:
         return None
     entity = unquote(encoded)
-    return entity if entity else None
+    if not entity or quote(entity, safe="") != encoded:
+        return None
+    return entity
 
 def call_tool(name, args):
     if name == "atlas_search":

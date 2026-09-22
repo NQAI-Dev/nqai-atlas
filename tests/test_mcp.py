@@ -131,6 +131,15 @@ class McpTests(unittest.TestCase):
         response = self.client.call("resources/read", {"uri": "atlas://entity/"})
         self.assertEqual(response["error"]["code"], -32602)
 
+    def test_entity_context_resource_rejects_query_fragment_and_noncanonical_encoding(self):
+        for uri in (
+            "atlas://entity/project%3Amcp?ignored=1",
+            "atlas://entity/project%3Amcp#ignored",
+            "atlas://entity/project:mcp",
+        ):
+            response = self.client.call("resources/read", {"uri": uri})
+            self.assertEqual(response["error"]["code"], -32602, uri)
+
     def test_atlas_add_and_search_round_trip(self):
         add_resp = self.client.call("tools/call", {
             "name": "atlas_add",
