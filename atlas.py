@@ -107,6 +107,16 @@ def validate_record(record: dict, seen: set[str] | None = None) -> list[str]:
         errors.append(f"invalid kind: {record.get('kind')}")
     if record.get("status") not in STATUSES:
         errors.append(f"invalid status: {record.get('status')}")
+    record_ts = record.get("ts")
+    if not isinstance(record_ts, str):
+        errors.append("ts must be an ISO-8601 string")
+    else:
+        try:
+            parsed_ts = datetime.fromisoformat(record_ts.replace("Z", "+00:00"))
+            if parsed_ts.tzinfo is None:
+                errors.append("ts must include a timezone")
+        except ValueError:
+            errors.append("ts must be an ISO-8601 timestamp")
     if not isinstance(record.get("text"), str) or not record.get("text"):
         errors.append("text must be a non-empty string")
     source = record.get("source")
@@ -574,8 +584,10 @@ def verify(_args) -> int:
         seen.add(record.get("id"))
         if record.get("kind") not in KINDS: errors.append(f"line {line_no}: invalid kind")
         if record.get("status") not in STATUSES: errors.append(f"line {line_no}: invalid status")
-        try: datetime.fromisoformat(record.get("ts", "").replace("Z", "+00:00"))
-        except ValueError: errors.append(f"line {line_no}: invalid timestamp")
+        record_ts = record.get("ts")
+        if isinstance(record_ts, str):
+            try: datetime.fromisoformat(record_ts.replace("Z", "+00:00"))
+            except ValueError: errors.append(f"line {line_no}: invalid timestamp")
     for record in records():
         if record.get("supersedes") and record["supersedes"] not in seen:
             errors.append(f"{record['id']}: unknown supersedes {record['supersedes']}")

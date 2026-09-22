@@ -170,6 +170,15 @@ class AtlasTests(unittest.TestCase):
         }) + "\n", encoding="utf-8")
         self.assertEqual(atlas.verify(SimpleNamespace()), 1)
 
+    def test_verify_rejects_malformed_timestamp_without_crashing(self):
+        self.records.write_text(json.dumps({
+            "id": "bad", "ts": {"not": "a timestamp"}, "kind": "fact",
+            "entity": "project:test", "text": "ok", "status": "active",
+            "source": {"kind": "test", "ref": "x"}, "confidence": 1,
+            "tags": [], "supersedes": None, "relations": [],
+        }) + "\n", encoding="utf-8")
+        self.assertEqual(atlas.verify(SimpleNamespace()), 1)
+
     def test_verify_rejects_malformed_source_and_relation_shape(self):
         self.records.write_text(json.dumps({
             "id": "bad", "ts": "2026-09-12T00:00:00Z", "kind": "fact",
