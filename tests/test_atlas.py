@@ -161,6 +161,24 @@ class AtlasTests(unittest.TestCase):
         }) + "\n", encoding="utf-8")
         self.assertEqual(atlas.verify(SimpleNamespace()), 1)
 
+    def test_verify_rejects_invalid_record_field_types(self):
+        self.records.write_text(json.dumps({
+            "id": "bad", "ts": "2026-09-12T00:00:00Z", "kind": "fact",
+            "entity": "project:test", "text": "", "status": "active",
+            "source": {"kind": "test", "ref": "x"}, "confidence": 2,
+            "tags": ["ok", 7], "supersedes": None, "relations": [],
+        }) + "\n", encoding="utf-8")
+        self.assertEqual(atlas.verify(SimpleNamespace()), 1)
+
+    def test_verify_rejects_malformed_source_and_relation_shape(self):
+        self.records.write_text(json.dumps({
+            "id": "bad", "ts": "2026-09-12T00:00:00Z", "kind": "fact",
+            "entity": "project:test", "text": "ok", "status": "active",
+            "source": "test", "confidence": 1, "tags": [], "supersedes": None,
+            "relations": [{"type": "relates_to"}],
+        }) + "\n", encoding="utf-8")
+        self.assertEqual(atlas.verify(SimpleNamespace()), 1)
+
     def test_project_observations_skip_unchanged_and_supersede_changes(self):
         root = Path(self.tmp.name) / "projects"
         project = root / "demo"

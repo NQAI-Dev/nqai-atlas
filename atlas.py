@@ -103,6 +103,23 @@ def validate_record(record: dict, seen: set[str] | None = None) -> list[str]:
         errors.append(f"missing {', '.join(sorted(missing))}")
     if entity_type(record.get("entity", "")) not in ENTITY_TYPES:
         errors.append(f"invalid entity type: {record.get('entity')}")
+    if record.get("kind") not in KINDS:
+        errors.append(f"invalid kind: {record.get('kind')}")
+    if record.get("status") not in STATUSES:
+        errors.append(f"invalid status: {record.get('status')}")
+    if not isinstance(record.get("text"), str) or not record.get("text"):
+        errors.append("text must be a non-empty string")
+    source = record.get("source")
+    if not isinstance(source, dict) or not isinstance(source.get("kind"), str) or not isinstance(source.get("ref"), str):
+        errors.append("source must contain string kind and ref")
+    confidence = record.get("confidence")
+    if isinstance(confidence, bool) or not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
+        errors.append("confidence must be a number between 0 and 1")
+    if not isinstance(record.get("tags", []), list) or not all(isinstance(tag, str) for tag in record.get("tags", [])):
+        errors.append("tags must be a list of strings")
+    supersedes = record.get("supersedes")
+    if supersedes is not None and not isinstance(supersedes, str):
+        errors.append("supersedes must be a string or null")
     if not isinstance(record.get("relations", []), list):
         errors.append("relations must be a list")
     for relation in record.get("relations", []):
