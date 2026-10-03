@@ -79,7 +79,9 @@ def current_records(entity: str) -> list[dict]:
     for item in current:
         if item.get("kind") != "observation":
             continue
-        source = item.get("source", {})
+        source = item.get("source")
+        if not isinstance(source, dict):
+            source = {}
         stream = (
             tuple(sorted(item.get("tags", []))),
             source.get("kind"),
@@ -423,8 +425,10 @@ def suggest_next(entity: str | None = None) -> list[dict]:
             if checked_dt is not None:
                 check_age = (datetime.now(timezone.utc) - checked_dt).total_seconds() / 86400
                 if check_age >= _HEALTH_STALE_DAYS:
+                    source = record.get("source")
+                    source_ref = source.get("ref", "?") if isinstance(source, dict) else "?"
                     _add(ent, "re-check-health",
-                         f"Health check from source '{record.get('source', {}).get('ref', '?')}' "
+                         f"Health check from source '{source_ref}' "
                          f"is {int(check_age)} days old — run a new health check",
                          "medium", record["id"])
 

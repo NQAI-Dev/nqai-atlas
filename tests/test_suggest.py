@@ -132,6 +132,20 @@ class SuggestTests(unittest.TestCase):
 
         self.assertEqual(atlas.suggest_next(), [])
 
+    def test_stale_health_check_with_invalid_source_is_still_suggested(self):
+        payload = json.dumps({"status": "healthy", "checked_at": _ts(3)})
+        self._write([_record(
+            "service:web", "observation", payload,
+            tags=["health-check", "healthy"],
+            source=["malformed source"],
+        )])
+
+        suggestion = next(
+            item for item in atlas.suggest_next()
+            if item["action"] == "re-check-health"
+        )
+        self.assertIn("source '?'", suggestion["reason"])
+
     def test_dirty_git_snapshot_surfaced(self):
         snapshot = json.dumps({"name": "nodepulse",
                                "path": "/home/openclaw/Projects/nodepulse",
