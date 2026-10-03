@@ -113,6 +113,15 @@ class SuggestTests(unittest.TestCase):
               and s["entity"] == "service:web"]
         self.assertEqual(hc, [])
 
+    def test_non_object_health_check_payload_does_not_crash(self):
+        self._write([_record(
+            "service:web", "observation", json.dumps(["malformed but valid JSON"]),
+            tags=["health-check", "healthy"],
+            source={"kind": "health-check", "ref": "https://web/health"},
+        )])
+
+        self.assertEqual(atlas.suggest_next(), [])
+
     def test_dirty_git_snapshot_surfaced(self):
         snapshot = json.dumps({"name": "nodepulse",
                                "path": "/home/openclaw/Projects/nodepulse",

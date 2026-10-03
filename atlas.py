@@ -413,6 +413,8 @@ def suggest_next(entity: str | None = None) -> list[dict]:
             # Try to read checked_at from the payload; fall back to record ts.
             try:
                 payload = json.loads(record["text"])
+                if not isinstance(payload, dict):
+                    payload = {}
                 checked_at_str = payload.get("checked_at", record["ts"])
             except (json.JSONDecodeError, TypeError):
                 checked_at_str = record["ts"]
