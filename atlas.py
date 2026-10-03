@@ -105,6 +105,9 @@ def validate_record(record: dict, seen: set[str] | None = None) -> list[str]:
     missing = required - record.keys()
     if missing:
         errors.append(f"missing {', '.join(sorted(missing))}")
+    record_id = record.get("id")
+    if not isinstance(record_id, str) or not record_id:
+        errors.append("id must be a non-empty string")
     if entity_type(record.get("entity", "")) not in ENTITY_TYPES:
         errors.append(f"invalid entity type: {record.get('entity')}")
     if record.get("kind") not in KINDS:
@@ -143,7 +146,8 @@ def validate_record(record: dict, seen: set[str] | None = None) -> list[str]:
                 or not isinstance(relation.get("entity"), str)
                 or not relation.get("entity")):
             errors.append(f"invalid relation: {relation}")
-    if seen is not None and record.get("supersedes") and record["supersedes"] not in seen:
+    if (seen is not None and isinstance(supersedes, str) and supersedes
+            and supersedes not in seen):
         errors.append(f"unknown supersedes {record['supersedes']}")
     return errors
 
@@ -590,8 +594,11 @@ def verify(_args) -> int:
         errors.extend(f"line {line_no}: {error}" for error in validate_record(record, seen))
         if not isinstance(record, dict):
             continue
-        if record.get("id") in seen: errors.append(f"line {line_no}: duplicate id {record.get('id')}")
-        seen.add(record.get("id"))
+        record_id = record.get("id")
+        if isinstance(record_id, str):
+            if record_id in seen:
+                errors.append(f"line {line_no}: duplicate id {record_id}")
+            seen.add(record_id)
         if record.get("kind") not in KINDS: errors.append(f"line {line_no}: invalid kind")
         if record.get("status") not in STATUSES: errors.append(f"line {line_no}: invalid status")
         record_ts = record.get("ts")
@@ -601,7 +608,8 @@ def verify(_args) -> int:
     for record in records():
         if not isinstance(record, dict):
             continue
-        if record.get("supersedes") and record["supersedes"] not in seen:
+        supersedes = record.get("supersedes")
+        if isinstance(supersedes, str) and supersedes and supersedes not in seen:
             errors.append(f"{record['id']}: unknown supersedes {record['supersedes']}")
     if errors:
         print("\n".join(errors), file=sys.stderr)

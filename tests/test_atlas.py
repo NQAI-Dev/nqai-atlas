@@ -210,6 +210,21 @@ class AtlasTests(unittest.TestCase):
         }) + "\n", encoding="utf-8")
         self.assertEqual(atlas.verify(SimpleNamespace()), 1)
 
+    def test_verify_rejects_unhashable_ids_and_supersedes_without_crashing(self):
+        record = {
+            "id": [], "ts": "2026-09-12T00:00:00Z", "kind": "fact",
+            "entity": "project:test", "text": "ok", "status": "active",
+            "source": {"kind": "test", "ref": "x"}, "confidence": 1,
+            "tags": [], "supersedes": None, "relations": [],
+        }
+        self.records.write_text(json.dumps(record) + "\n", encoding="utf-8")
+        self.assertEqual(atlas.verify(SimpleNamespace()), 1)
+
+        record["id"] = "valid-id"
+        record["supersedes"] = []
+        self.records.write_text(json.dumps(record) + "\n", encoding="utf-8")
+        self.assertEqual(atlas.verify(SimpleNamespace()), 1)
+
     def test_project_observations_skip_unchanged_and_supersede_changes(self):
         root = Path(self.tmp.name) / "projects"
         project = root / "demo"
