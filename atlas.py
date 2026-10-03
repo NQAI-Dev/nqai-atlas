@@ -346,7 +346,8 @@ _REVIEW_WINDOW_DAYS = 7     # default recent-activity window for review
 
 def _parse_ts(value: str) -> datetime | None:
     try:
-        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        parsed = datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return parsed if parsed.tzinfo is not None else None
     except (ValueError, AttributeError):
         return None
 

@@ -122,6 +122,16 @@ class SuggestTests(unittest.TestCase):
 
         self.assertEqual(atlas.suggest_next(), [])
 
+    def test_timezone_naive_health_check_timestamp_is_ignored(self):
+        payload = json.dumps({"status": "healthy", "checked_at": "2026-01-01T00:00:00"})
+        self._write([_record(
+            "service:web", "observation", payload,
+            tags=["health-check", "healthy"],
+            source={"kind": "health-check", "ref": "https://web/health"},
+        )])
+
+        self.assertEqual(atlas.suggest_next(), [])
+
     def test_dirty_git_snapshot_surfaced(self):
         snapshot = json.dumps({"name": "nodepulse",
                                "path": "/home/openclaw/Projects/nodepulse",
