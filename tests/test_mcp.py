@@ -37,6 +37,8 @@ class McpClient:
     def close(self):
         self.proc.stdin.close()
         self.proc.wait(timeout=5)
+        self.proc.stdout.close()
+        self.proc.stderr.close()
 
 
 class McpTests(unittest.TestCase):
