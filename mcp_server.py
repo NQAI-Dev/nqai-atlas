@@ -74,12 +74,16 @@ def call_tool(name, args):
             "entity": args["entity"], "text": args["text"],
             "status": args.get("status", "active"),
             "source": {"kind": args.get("source_kind", "conversation"), "ref": args["source"]},
-            "confidence": float(args.get("confidence", 1.0)),
+            "confidence": args.get("confidence", 1.0),
             "tags": args.get("tags", []), "supersedes": args.get("supersedes"),
             "relations": [{"type": "relates_to", "entity": related_entity} for related_entity in args.get("relations", [])],
         }
         if record["status"] not in atlas.STATUSES:
             raise ValueError("invalid status")
+        seen = {item.get("id") for item in atlas.records() if isinstance(item, dict)}
+        errors = atlas.validate_record(record, seen=seen)
+        if errors:
+            raise ValueError("invalid Atlas record: " + "; ".join(errors))
         atlas.append_record(record)
         return f"Added Atlas record {record['id']}."
     if name == "atlas_health_check":

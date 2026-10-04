@@ -179,6 +179,20 @@ class McpTests(unittest.TestCase):
         self.assertTrue(response["result"]["isError"])
         self.assertIn("missing required fields", response["result"]["content"][0]["text"])
 
+    def test_atlas_add_rejects_invalid_record_without_corrupting_store(self):
+        response = self.client.call("tools/call", {
+            "name": "atlas_add",
+            "arguments": {
+                "kind": "fact", "entity": "project:mcp", "text": "invalid confidence",
+                "source": "test", "confidence": 1.5,
+            },
+        })
+        self.assertTrue(response["result"]["isError"])
+        self.assertIn("confidence must be a number", response["result"]["content"][0]["text"])
+
+        verify = self.client.call("tools/call", {"name": "atlas_verify", "arguments": {}})
+        self.assertFalse(verify["result"]["isError"])
+
     def test_atlas_add_rejects_unknown_tool(self):
         response = self.client.call("tools/call", {"name": "atlas_nope", "arguments": {}})
         self.assertTrue(response["result"]["isError"])
