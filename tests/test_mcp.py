@@ -7,6 +7,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+import mcp_server
 
 REPO = Path(__file__).resolve().parent.parent
 
@@ -50,6 +51,11 @@ class McpTests(unittest.TestCase):
     def tearDown(self):
         self.client.close()
         self.tmp.cleanup()
+
+    def test_invalid_json_rpc_shapes_return_errors_without_raising(self):
+        self.assertEqual(mcp_server.handle([])["error"]["code"], -32600)
+        self.assertEqual(mcp_server.handle({"jsonrpc": "1.0", "id": 1, "method": "ping"})["error"]["code"], -32600)
+        self.assertEqual(mcp_server.handle({"jsonrpc": "2.0", "id": 2, "method": "ping", "params": []})["error"]["code"], -32602)
 
     def test_initialize_handshake(self):
         response = self.client.call("initialize")

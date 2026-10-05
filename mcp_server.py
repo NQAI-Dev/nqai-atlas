@@ -142,7 +142,13 @@ def call_tool(name, args):
 
 
 def handle(req):
+    if not isinstance(req, dict):
+        return error(None, -32600, "invalid request")
     method, request_id = req.get("method"), req.get("id")
+    if req.get("jsonrpc") != "2.0" or not isinstance(method, str):
+        return error(request_id, -32600, "invalid request")
+    if "params" in req and not isinstance(req["params"], dict):
+        return error(request_id, -32602, "params must be an object")
     if method == "initialize":
         return result(request_id, {"protocolVersion": PROTOCOL, "capabilities": {"tools": {}, "resources": {}}, "serverInfo": SERVER_INFO})
     if method == "ping":
