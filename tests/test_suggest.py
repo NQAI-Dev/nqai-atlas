@@ -175,6 +175,14 @@ class SuggestTests(unittest.TestCase):
         dirty = [s for s in result if s["action"] == "commit-dirty-work"]
         self.assertEqual(dirty, [])
 
+    def test_non_object_git_snapshot_does_not_crash(self):
+        self._write([_record(
+            "project:nodepulse", "observation", json.dumps(["unexpected", "shape"]),
+            tags=["git", "inventory"],
+        )])
+
+        self.assertEqual(atlas.suggest_next(), [])
+
     def test_suggestion_schema(self):
         self._write([_record("project:x", "goal", "Ship feature Y", ts=_ts(20))])
         result = atlas.suggest_next()

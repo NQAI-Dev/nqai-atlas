@@ -436,7 +436,7 @@ def suggest_next(entity: str | None = None) -> list[dict]:
         elif kind == "observation" and "git" in tags and "inventory" in tags:
             try:
                 snapshot = json.loads(record["text"])
-                if snapshot.get("dirty"):
+                if isinstance(snapshot, dict) and snapshot.get("dirty"):
                     changed = snapshot.get("changed", 0)
                     _add(ent, "commit-dirty-work",
                          f"Project has {changed} uncommitted change(s) — commit or stash",
