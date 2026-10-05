@@ -72,6 +72,16 @@ class ProgressTests(unittest.TestCase):
         self.assertIn("[commit]", result)
         self.assertIn("we have a new commit", result)
 
+    def test_progress_does_not_mistake_curl_for_url_evidence(self):
+        self._write([
+            _record("project:alpha", "fact", "curl fetched the latest data"),
+            _record("project:alpha", "fact", "downloaded from https://example.org/file"),
+        ])
+        report = atlas.progress_report()
+        evidence = {item["text"]: item["evidence_types"] for item in report["evidence"]}
+        self.assertNotIn("curl fetched the latest data", evidence)
+        self.assertEqual(evidence["downloaded from https://example.org/file"], ["url"])
+
     def test_tools_list_advertises_atlas_progress(self):
         result = mcp_server.handle({"jsonrpc": "2.0", "id": 2, "method": "tools/list"})
         names = {tool["name"] for tool in result["result"]["tools"]}

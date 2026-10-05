@@ -5,6 +5,7 @@ import argparse
 import fcntl
 import json
 import os
+import re
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -539,10 +540,12 @@ def progress_report(entity: str | None = None, days: int = _REVIEW_WINDOW_DAYS) 
             
         text = r.get("text", "").lower()
         ev_types = set()
-        if "commit" in text: ev_types.add("commit")
-        if "test" in text: ev_types.add("test")
-        if "url" in text or "http" in text: ev_types.add("url")
-        if "blocker" in text: ev_types.add("blocker")
+        if re.search(r"\bcommit\b", text): ev_types.add("commit")
+        if re.search(r"\btest(?:s|ed|ing)?\b", text): ev_types.add("test")
+        # Avoid treating words such as "curl" as URL evidence; accept an
+        # explicit URL label or an actual HTTP(S) scheme.
+        if re.search(r"\burl\b|https?://", text): ev_types.add("url")
+        if re.search(r"\bblocker\b", text): ev_types.add("blocker")
         
         for t in r.get("tags", []):
             tl = t.lower()
